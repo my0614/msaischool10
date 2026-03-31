@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 
 months = {"january": 1,"february": 2,"march": 3,"april": 4, "may": 5,"june": 6,"july": 7, "august": 8,"september": 9,"october": 10,"november": 11,"december": 12}
-phases = {'new moon': 0, 'first quarter': 0.5, 'third quarter': 0.5, 'full moon': 1}
+phases = {'New Moon': 0, 'First Quarter': 0.5, 'Third Quarter': 0.5, 'Full Moon': 1}
 
 # 데이터셋 불러오기
 meteor_showers = pd.read_csv("./data/meteorshowers.csv")
-moon_phases = pd.read_csv("./data/moonphases.csv")
+moon_phases_2026 = pd.read_csv("./data/moon_phases_2026.csv")
 constellations = pd.read_csv("./data/constellations.csv")
 cities = pd.read_csv("./data/cities.csv")
 
@@ -42,8 +42,9 @@ def predict_best_meteor_shower_viewing(city):
         radiant =  meteor_showers[meteor_showers['radiant']  == constell]['radiant'].iloc[0]
         meteor_showers_startdate = pd.to_datetime(meteor_showers[meteor_showers['radiant']  == constell]['startdate']).iloc[0]
         meteor_showers_enddate = pd.to_datetime(meteor_showers[meteor_showers['radiant']  == constell]['enddate']).iloc[0]
-        moon_phase_list = moon_phases.loc[(moon_phases['data'] >= meteor_showers_startdate) & (moon_phases['data'] <= meteor_showers_enddate)]
-        best_moon_date = moon_phase_list.loc[moon_phase_list['percentage'].idxmin()]['data'].strftime('%Y-%m-%d')
+        moon_phases_2026['date'] = pd.to_datetime(moon_phases_2026['date'])
+        moon_phase_list = moon_phases_2026.loc[(moon_phases_2026['date'] >= meteor_showers_startdate) & (moon_phases_2026['date'] <= meteor_showers_enddate)]
+        best_moon_date = moon_phase_list.loc[moon_phase_list['percentage'].idxmin()]['date'].strftime('%Y-%m-%d')
         meteor_shower_string = f"{name}를 잘 보려면 {radiant}자리 위치를 향하여 {best_moon_date}날짜에 보시면 관측이 잘됩니다."
         print(meteor_shower_string)
     return  meteor_shower_string, name, meteor_showers_startdate, meteor_showers_enddate,best_moon_date
@@ -53,25 +54,16 @@ meteor_showers['bestmonth'] = meteor_showers['bestmonth'].map(months)
 meteor_showers['startmonth'] = meteor_showers['startmonth'].map(months)
 meteor_showers['endmonth'] = meteor_showers['endmonth'].map(months)
 constellations['bestmonth'] = constellations['bestmonth'].apply(change_month) #apply 사용
-moon_phases['month'] = moon_phases['month'].apply(change_month) #apply 사용
 
 # Datetime 변환
-meteor_showers['startdate'] = pd.to_datetime('2020'+ meteor_showers['startmonth'].astype(str).str.zfill(2) + meteor_showers['startday'].astype(str).str.zfill(2), format='%Y%m%d')
-meteor_showers['enddate'] = pd.to_datetime('2020'+ meteor_showers['endmonth'].astype(str).str.zfill(2) + meteor_showers['endday'].astype(str).str.zfill(2), format='%Y%m%d')
-moon_phases['data'] = pd.to_datetime('2020'+ moon_phases['month'].astype(str).str.zfill(2) + moon_phases['day'].astype(str).str.zfill(2), format='%Y%m%d')
-moon_phases['percentage'] = moon_phases['moonphase'].map(phases)
+meteor_showers['startdate'] = pd.to_datetime('2026'+ meteor_showers['startmonth'].astype(str).str.zfill(2) + meteor_showers['startday'].astype(str).str.zfill(2), format='%Y%m%d')
+meteor_showers['enddate'] = pd.to_datetime('2026'+ meteor_showers['endmonth'].astype(str).str.zfill(2) + meteor_showers['endday'].astype(str).str.zfill(2), format='%Y%m%d')
+moon_phases_2026['percentage'] = moon_phases_2026['moonphase'].map(phases)
 
 # 불필요한 프레임 삭제하기
-moon_phases = moon_phases.drop(['month','day'],axis=1)
 meteor_showers = meteor_showers.drop(['preferredhemisphere', 'startmonth','startday','endmonth','endday'],axis=1)
 constellations =  constellations.drop(['besttime'],axis=1)
-moon_phases['percentage'] = moon_phases['percentage'].ffill().fillna(0)
-
-
-
+moon_phases_2026['percentage'] = moon_phases_2026['percentage'].ffill().fillna(0)
 
 #유성우 관측 기간 조회
-#print(meteor_showers)
-#print(moon_phases)
 predict_best_meteor_shower_viewing('Seoul')
-#print(constellations)
