@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 months = {"january": 1,"february": 2,"march": 3,"april": 4, "may": 5,"june": 6,"july": 7, "august": 8,"september": 9,"october": 10,"november": 11,"december": 12}
 phases = {'New Moon': 0, 'First Quarter': 0.5, 'Third Quarter': 0.5, 'Full Moon': 1}
@@ -65,5 +66,31 @@ meteor_showers = meteor_showers.drop(['preferredhemisphere', 'startmonth','start
 constellations =  constellations.drop(['besttime'],axis=1)
 moon_phases_2026['percentage'] = moon_phases_2026['percentage'].ffill().fillna(0)
 
-#유성우 관측 기간 조회
 predict_best_meteor_shower_viewing('Seoul')
+
+# 데이터 시각화
+plt.rc('font', family='Malgun Gothic')
+plt.rc('axes', unicode_minus=False)
+
+fig, ax1 = plt.subplots(figsize=(10, 5))
+
+# 유성우 (왼쪽 y축)
+ax1.barh(
+    meteor_showers['name'], 
+    meteor_showers['enddate'] - meteor_showers['startdate'], 
+    left=meteor_showers['startdate']
+)
+ax1.set_xlabel("날짜")
+ax1.set_ylabel("유성우")
+
+# 달 위상 (오른쪽 y축)
+ax2 = ax1.twinx()
+ax2.plot(
+    moon_phases_2026['date'], 
+    moon_phases_2026['percentage'], color = 'gold'
+)
+ax2.set_ylabel("달 밝기")
+
+plt.title("유성우 기간 + 달 위상")
+
+plt.show()
