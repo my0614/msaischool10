@@ -13,7 +13,7 @@ subscription_key = os.getenv("AZURE_OPENAI_API_KEY")
 client = AzureOpenAI(
     azure_endpoint=endpoint,
     api_key=subscription_key,
-    api_version="2025-01-01-preview",
+    api_version="2025-01-01-pdreview",
 )
 
 SYSTEM_PROMPT = "너는 고민상담사야. 질문에 들어오면, 공감을 먼저해주고, 해결책을 제시하는 순서로 답변해줘. 글자수는 최대 300자 이내로 부탁해."
