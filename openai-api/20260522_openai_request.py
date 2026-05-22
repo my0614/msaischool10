@@ -1,11 +1,15 @@
+import os
 import requests
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 url = "https://10ai003-openai.openai.azure.com/openai/deployments/gpt-4o-mini-10ai003/chat/completions?api-version=2025-01-01-preview"
 
 headers = {
   'Content-Type': 'application/json',
-  'api-key': 'REMOVED'
+  'api-key': os.getenv("AZURE_OPENAI_API_KEY")
 }
 
 
@@ -38,13 +42,11 @@ def request_openai(message):
   response = requests.request("POST", url, headers=headers, data=payload)
 
   if response.status_code == 200:
-    result = result['choices'][0]['message']['content']
-    return result
+    result = response.json()
+    return result['choices'][0]['message']['content']
   else:
     print("status_code", response.status_code)
-    
 
 
 message = input("원하는 메세지를 입력해주세요!")
 print(request_openai(message))
-
