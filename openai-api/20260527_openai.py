@@ -1,10 +1,14 @@
+import os
 import requests
 import json
 import base64
 from PIL import Image
 import io
+from dotenv import load_dotenv
 
-url = "https://10ai000-openai-sw.openai.azure.com/openai/deployments/gpt-image-2/images/generations?api-version=2024-02-01"
+load_dotenv()
+
+url = os.getenv("IMAGE_ENDPOINT_URL")
 
 payload = json.dumps({
   "prompt": "피카소가 그린 형식의 바다 풍경을 그려줘",
@@ -16,7 +20,7 @@ payload = json.dumps({
 })
 headers = {
   'Content-Type': 'application/json',
-  'api-key': 'os.getenv("IMAGE_API_KEY")'
+  'api-key': os.getenv("IMAGE_API_KEY")
 }
 
 response = requests.request("POST", url, headers=headers, data=payload)
