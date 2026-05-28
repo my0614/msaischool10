@@ -1,9 +1,10 @@
 import os
 import json
 from openai import AzureOpenAI
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
+from pykrx import stock as krx
 
 load_dotenv()
 
@@ -13,103 +14,89 @@ client = AzureOpenAI(
     api_version="2024-05-01-preview",
 )
 
-# Provide the model deployment name you want to use for this example
-
 deployment_name = os.getenv("DEPLOYMENT_NAME")
 
-# Simplified weather data
-WEATHER_DATA = {
-    "tokyo": {"temperature": "10", "unit": "celsius"},
-    "san francisco": {"temperature": "72", "unit": "fahrenheit"},
-    "paris": {"temperature": "22", "unit": "celsius"}
+STOCK_CODE = {
+    "삼성전자": "005930",
+    "sk하이닉스": "000660",
+    "카카오": "035720",
+    "네이버": "035420",
+    "lg에너지솔루션": "373220",
+    "현대차": "005380",
+    "기아": "000270",
 }
 
-# Simplified timezone data
-TIMEZONE_DATA = {
-    "tokyo": "Asia/Tokyo",
-    "san francisco": "America/Los_Angeles",
-    "paris": "Europe/Paris"
-}
+def get_stock_price(name):
+    """한국 주식 종목명으로 전날 종가 조회"""
+    name_lower = name.lower().replace(" ", "")
+    code = None
+    for key, val in STOCK_CODE.items():
+        if key.replace(" ", "") in name_lower:
+            code = val
+            break
+    if not code:
+        return json.dumps({"error": f"{name}의 종목 코드를 찾을 수 없습니다."})
 
-def get_current_weather(location, unit=None):
-    """Get the current weather for a given location"""
-    location_lower = location.lower()
-    print(f"get_current_weather called with location: {location}, unit: {unit}")  
-    
-    for key in WEATHER_DATA:
-        if key in location_lower:
-            print(f"Weather data found for {key}")  
-            weather = WEATHER_DATA[key]
-            return json.dumps({
-                "location": location,
-                "temperature": weather["temperature"],
-                "unit": unit if unit else weather["unit"]
-            })
-    
-    print(f"No weather data found for {location_lower}")  
-    return json.dumps({"location": location, "temperature": "unknown"})
+    from datetime import timedelta
+    today = datetime.today().strftime("%Y%m%d")
+    week_ago = (datetime.today() - timedelta(days=7)).strftime("%Y%m%d")
+    df = krx.get_market_ohlcv(week_ago, today, code)
+    if df.empty:
+        return json.dumps({"error": "데이터 없음"})
 
-def get_current_time(location):
-    """Get the current time for a given location"""
-    print(f"get_current_time called with location: {location}")  
-    location_lower = location.lower()
-    
-    for key, timezone in TIMEZONE_DATA.items():
-        if key in location_lower:
-            print(f"Timezone found for {key}")  
-            current_time = datetime.now(ZoneInfo(timezone)).strftime("%I:%M %p")
-            return json.dumps({
-                "location": location,
-                "current_time": current_time
-            })
-    
-    print(f"No timezone data found for {location_lower}")  
-    return json.dumps({"location": location, "current_time": "unknown"})
+    row = df.iloc[-1]
+    return json.dumps({
+        "종목명": name,
+        "종목코드": code,
+        "종가": int(row["종가"]),
+        "시가": int(row["시가"]),
+        "고가": int(row["고가"]),
+        "저가": int(row["저가"]),
+        "거래량": int(row["거래량"]),
+        "기준일": today,
+    }, ensure_ascii=False)
 
 def run_conversation():
     # Initial user message
-    messages = [{"role": "user", "content": "What's the weather and current time in San Francisco, Tokyo, and Paris?"}]
+    messages = [{"role": "user", "content": "sk하이닉스 주가 알려줘"}]
 
-    # Define the functions for the model
+    # Define the function for the model
     tools = [
         {
             "type": "function",
             "function": {
-                "name": "get_current_weather",
-                "description": "Get the current weather in a given location",
+                "name": "get_multi_data",
+                "description": "숫자 2개를 작성해주시면 곱한 결과를 출력해드립니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city name, e.g. San Francisco",
-                        },
-                        "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+                        "num1": {"type": "string", "description": "number 1"},
+                        "num2": {"type": "string", "description": "number 2"},
                     },
-                    "required": ["location"],
+                    "required": ["num1", "num2"],
                 },
             }
         },
         {
             "type": "function",
             "function": {
-                "name": "get_current_time",
-                "description": "Get the current time in a given location",
+                "name": "get_stock_price",
+                "description": "한국 주식 종목의 전날 종가, 시가, 고가, 저가, 거래량을 조회합니다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "location": {
+                        "name": {
                             "type": "string",
-                            "description": "The city name, e.g. San Francisco",
+                            "description": "종목명 (예: 삼성전자, 카카오, SK하이닉스)",
                         },
                     },
-                    "required": ["location"],
+                    "required": ["name"],
                 },
             }
-        }
+        },
     ]
 
-    # First API call: Ask the model to use the functions
+    # First API call: Ask the model to use the function
     response = client.chat.completions.create(
         model=deployment_name,
         messages=messages,
@@ -127,28 +114,24 @@ def run_conversation():
     # Handle function calls
     if response_message.tool_calls:
         for tool_call in response_message.tool_calls:
-            function_name = tool_call.function.name
             function_args = json.loads(tool_call.function.arguments)
-            print(f"Function call: {function_name}")  
-            print(f"Function arguments: {function_args}")  
-            
-            if function_name == "get_current_weather":
-                function_response = get_current_weather(
-                    location=function_args.get("location"),
-                    unit=function_args.get("unit")
+            print(f"Function arguments: {function_args}")
+            if tool_call.function.name == "get_multi_data":
+                result_response = get_multi_data(
+                    num1=function_args.get("num1"),
+                    num2=function_args.get("num2"),
                 )
-            elif function_name == "get_current_time":
-                function_response = get_current_time(
-                    location=function_args.get("location")
+            elif tool_call.function.name == "get_stock_price":
+                result_response = get_stock_price(
+                    name=function_args.get("name")
                 )
             else:
-                function_response = json.dumps({"error": "Unknown function"})
-            
+                result_response = json.dumps({"error": "Unknown function"})
             messages.append({
                 "tool_call_id": tool_call.id,
                 "role": "tool",
-                "name": function_name,
-                "content": function_response,
+                "name": tool_call.function.name,
+                "content": result_response,
             })
     else:
         print("No tool calls were made by the model.")  
