@@ -1,5 +1,6 @@
 
 import os
+import gradio as gr
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 
@@ -11,66 +12,83 @@ search_endpoint = os.getenv("SEARCH_ENDPOINT", "https://10ai003-search.search.wi
 search_key = os.getenv("SERACH_AI_KEY")
 subscription_key = os.getenv("AZURE_OPENAI_API_KEY")
 
+INDEX_OPTIONS = {
+    "요리 레시피": {"index": "index-10ai003food",   "in_scope": True,  "strictness": 3},
+    "여행 정보":   {"index": "index-10ai003travel",  "in_scope": False, "strictness": 1},
+    "영화 정보":   {"index": "rag-1780035521025",    "in_scope": False, "strictness": 1},
+}
+
 client = AzureOpenAI(
     azure_endpoint=endpoint,
     api_key=subscription_key,
     api_version="2025-01-01-preview",
 )
 
-chat_prompt = [
-    {
-        "role": "system",
-        "content": "너는 영화 관련 도우미야."
-    },
-    {
-        "role": "user",
-        "content": "영화 추천해줘"
-    },
-    {
-        "role": "assistant",
-        "content": "기생충, 인셉션, 인터스텔라 등을 추천해요! 어떤 장르를 좋아하세요?"
-    },
-    {
-        "role": "user",
-        "content": "액션 영화로 추천해줘"
-    }
-]
+def chat(user_message, index_label, history):
+    config = INDEX_OPTIONS[index_label]
 
-completion = client.chat.completions.create(
-    model=deployment,
-    messages=chat_prompt,
-    max_tokens=6553,
-    temperature=0.7,
-    top_p=0.95,
-    frequency_penalty=0,
-    presence_penalty=0,
-    stop=None,
-    stream=False,
-    extra_body={
-        "data_sources": [{
-            "type": "azure_search",
-            "parameters": {
-                "endpoint": search_endpoint,
-                "index_name": "rag-1780035521025",
-                "semantic_configuration": "rag-1780035521025-semantic-configuration",
-                "query_type": "semantic",
-                "fields_mapping": {},
-                "in_scope": True,
-                "filter": None,
-                "strictness": 3,
-                "top_n_documents": 5,
-                "authentication": {
-                    "type": "api_key",
-                    "key": search_key
+    messages = [{"role": "system", "content": f"{index_label} 관련 도우미야. 친절하게 답변해줘."}]
+    for msg in history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": user_message})
+
+    completion = client.chat.completions.create(
+        model=deployment,
+        messages=messages,
+        max_tokens=2000,
+        temperature=0.7,
+        stream=False,
+        extra_body={
+            "data_sources": [{
+                "type": "azure_search",
+                "parameters": {
+                    "endpoint": search_endpoint,
+                    "index_name": config["index"],
+                    "query_type": "simple",
+                    "fields_mapping": {},
+                    "in_scope": config["in_scope"],
+                    "filter": None,
+                    "strictness": config["strictness"],
+                    "top_n_documents": 5,
+                    "authentication": {
+                        "type": "api_key",
+                        "key": search_key
+                    }
                 }
-            }
-        }]
-    }
-)
+            }]
+        }
+    )
 
-print(completion.choices[0].message.content)
-print()
+    answer = completion.choices[0].message.content
+    citations = completion.choices[0].message.context.get("citations", [])
+    filepaths = list({c["filepath"] for c in citations if c.get("filepath")})
+    if filepaths:
+        answer += f"\n\n📄 출처: {', '.join(filepaths)}"
 
-citations = completion.choices[0].message.context.get("citations", [])
-filepaths = list({c["filepath"] for c in citations})
-print("출처:", filepaths)
+    history.append({"role": "user", "content": user_message})
+    history.append({"role": "assistant", "content": answer})
+    return "", history
+
+with gr.Blocks(title="RAG 챗봇") as demo:
+    gr.Markdown("## Azure Search RAG 챗봇")
+
+    index_selector = gr.Radio(
+        choices=list(INDEX_OPTIONS.keys()),
+        value="요리 레시피",
+        label="인덱스 선택",
+    )
+
+    chatbot = gr.Chatbot(height=500)
+    msg = gr.Textbox(placeholder="질문을 입력하세요...", label="메시지")
+
+    with gr.Row():
+        submit_btn = gr.Button("전송", variant="primary")
+        clear_btn = gr.Button("초기화")
+
+    index_selector.change(lambda: ([], ""), outputs=[chatbot, msg])
+
+    submit_btn.click(chat, inputs=[msg, index_selector, chatbot], outputs=[msg, chatbot])
+    msg.submit(chat, inputs=[msg, index_selector, chatbot], outputs=[msg, chatbot])
+    clear_btn.click(lambda: ([], ""), outputs=[chatbot, msg])
+
+demo.launch(share=True)
