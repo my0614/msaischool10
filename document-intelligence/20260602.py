@@ -3,6 +3,7 @@ import requests
 import os
 from dotenv import load_dotenv
 import time
+from PIL import Image, ImageDraw, ImageFont
 
 load_dotenv()
 
@@ -35,5 +36,28 @@ def request_document_intelligence(image_path):
         
     return result_json
 
+def draw_image(image_path, result_json):
+    print("draw image")
+    image = Image.open(image_path)
+    draw = ImageDraw.Draw(image)
+    
+    block_list = result_json.get("analyzeResult").get("paragraphs")
+
+    for block in block_list:
+        content = block.get("content", "")
+        polygon = block.get("boundingRegions")[0].get("polygon")
+        format_pol = []
+        for i in range(0, len(polygon), 2):
+            format_pol.append((polygon[i], polygon[i + 1]))
+        draw.polygon(format_pol, outline="red", width=2)
+
+    output_path = "./result.png"
+    image.save(output_path)
+    print(f"저장 완료: {output_path}")
+
+    return image
+
+
 image_path = "../data/sample.png"
-print(request_document_intelligence(image_path))
+result_json =  request_document_intelligence(image_path)
+draw_image(image_path, result_json)
