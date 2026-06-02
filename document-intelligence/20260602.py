@@ -4,9 +4,32 @@ import os
 from dotenv import load_dotenv
 import time
 from PIL import Image, ImageDraw, ImageFont
+import random
+import platform
 
 load_dotenv()
 
+def random_color():
+  return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+
+def get_font(width):
+    font_size = (width / 900) * 15 
+    
+    try:
+        if platform.system() == "Windows":
+            # 윈도우: 맑은 고딕
+            return ImageFont.truetype("malgun.ttf", font_size)
+        elif platform.system() == "Darwin":  # macOS
+            # 맥: 애플 고딕
+            return ImageFont.truetype("AppleGothic.ttf", font_size)
+        else:  # Linux 등
+            # 기본 폰트 (한글 지원 안 될 수 있음)
+            return ImageFont.load_default(size=font_size)
+    except IOError:
+        # 지정한 폰트 파일이 없을 경우 PIL 기본 폰트 사용
+        return ImageFont.load_default()
+    
 def request_document_intelligence(image_path):
     endpoint = os.getenv("DI_ENDPOINT")
     header = {"Content-Type":"application/octet-stream","Ocp-Apim-Subscription-Key": os.getenv("DI_API_KEY")}
@@ -50,6 +73,7 @@ def draw_image(image_path, result_json):
         for i in range(0, len(polygon), 2):
             format_pol.append((polygon[i], polygon[i + 1]))
         draw.polygon(format_pol, outline="red", width=2)
+        draw.text((format_pol[0][0],format_pol[0][1]), content, fill=random_color(), font=get_font(900))
 
     output_path = "./result.png"
     image.save(output_path)
@@ -61,3 +85,26 @@ def draw_image(image_path, result_json):
 image_path = "../data/sample.png"
 result_json =  request_document_intelligence(image_path)
 draw_image(image_path, result_json)
+
+with gr.Blocks() as demo:
+    sample_text = gr.State("Sample Text")
+
+    def click_send(image_path):
+        result_json = request_document_intelligence(image_path)
+        image = draw_image(image_path, result_json)
+        return image
+
+    with gr.Row():
+
+        input_image = gr.Image(label="Input Image", type="filepath")
+        output_image = gr.Image(label="Output Image", type="pil")
+
+    send_button = gr.Button("전송")
+
+    send_button.click(
+        click_send,
+        inputs=[input_image],
+        outputs=[output_image]
+    )
+
+demo.launch()
