@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Download, RefreshCw } from 'lucide-react'
+import { Mic, MicOff, Download, RefreshCw, X } from 'lucide-react'
+import html2canvas from 'html2canvas'
+import Card from './Card'
 import './index.css'
 
 const API = 'http://localhost:8000'
@@ -9,10 +11,12 @@ export default function App() {
   const [step, setStep] = useState('idle')
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [showCard, setShowCard] = useState(false)
 
   const mediaRecorder = useRef(null)
   const audioChunks = useRef([])
   const audioBlob = useRef(null)
+  const cardRef = useRef(null)
 
   async function startRecording() {
     setError(null)
@@ -59,15 +63,17 @@ export default function App() {
     new Audio(URL.createObjectURL(blob)).play()
   }
 
-  function downloadCard() {
+  async function downloadCard() {
+    if (!cardRef.current) return
+    const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true, backgroundColor: null })
     const a = document.createElement('a')
-    a.href = `data:image/png;base64,${result.card_b64}`
+    a.href = canvas.toDataURL('image/png')
     a.download = `dear-me-${result.date}.png`
     a.click()
   }
 
   function reset() {
-    setStep('idle'); setResult(null); setError(null)
+    setStep('idle'); setResult(null); setError(null); setShowCard(false)
     audioBlob.current = null
   }
 
@@ -125,10 +131,7 @@ export default function App() {
                   <motion.div key={i}
                     animate={{ scale: [1, 1.6 + i * 0.3], opacity: [0.5, 0] }}
                     transition={{ duration: 1.6, repeat: Infinity, delay: i * 0.5, ease: 'easeOut' }}
-                    style={{
-                      position: 'absolute', inset: 0, borderRadius: '50%',
-                      border: '2px solid #e87878',
-                    }}
+                    style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '2px solid #e87878' }}
                   />
                 ))}
                 <motion.button
@@ -179,8 +182,10 @@ export default function App() {
               animate={{ opacity: 1 }}
               style={{ width: '100%' }}
             >
-              {/* 감정 */}
-              <motion.div style={s.card} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+              {/* 감정 & 키워드 */}
+              <motion.div style={s.card}
+                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              >
                 <p style={s.label}>오늘의 감정</p>
                 <div style={s.row}>
                   {result.emotions.map((e, i) => (
@@ -211,27 +216,21 @@ export default function App() {
                 </div>
               </motion.div>
 
-              {/* QR + 카드 */}
-              <motion.div style={{ ...s.card, ...s.twoCol, marginTop: 16 }}
+              {/* QR 코드만 */}
+              <motion.div style={{ ...s.card, marginTop: 16, textAlign: 'center' }}
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
               >
-                <div style={{ textAlign: 'center' }}>
-                  <p style={s.label}>📱 QR 코드</p>
-                  <img src={`data:image/png;base64,${result.qr_b64}`} alt="QR"
-                    style={{ width: 160, height: 160, borderRadius: 12, border: '1px solid rgba(196,168,130,0.2)' }} />
-                  <p style={{ color: '#5a4a42', fontSize: 12, marginTop: 8 }}>스캔하면 편지를 볼 수 있어요</p>
-                </div>
-                <div style={{ flex: 1, textAlign: 'center' }}>
-                  <p style={s.label}>🖨️ 타임캡슐 카드</p>
-                  <img src={`data:image/png;base64,${result.card_b64}`} alt="Card"
-                    style={{ width: '100%', maxWidth: 320, borderRadius: 12, border: '1px solid rgba(196,168,130,0.2)', marginBottom: 16 }} />
-                  <motion.button
-                    whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                    onClick={downloadCard} style={s.dlBtn}
-                  >
-                    <Download size={15} style={{ marginRight: 6 }} /> 카드 저장
-                  </motion.button>
-                </div>
+                <p style={s.label}>📱 타임캡슐 카드</p>
+                <p style={{ color: '#5a4a42', fontSize: 14, marginBottom: 24 }}>QR을 눌러 카드를 확인하세요</p>
+                <motion.img
+                  src={`data:image/png;base64,${result.qr_b64}`}
+                  alt="QR"
+                  whileHover={{ scale: 1.06, boxShadow: '0 8px 40px rgba(196,168,130,0.3)' }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => setShowCard(true)}
+                  style={s.qrClickable}
+                />
+                <p style={{ color: '#4a3a32', fontSize: 12, marginTop: 16 }}>클릭하면 카드가 열립니다</p>
               </motion.div>
 
               <div style={{ textAlign: 'center', marginTop: 20 }}>
@@ -247,6 +246,45 @@ export default function App() {
 
         </AnimatePresence>
       </div>
+
+      {/* 카드 모달 */}
+      <AnimatePresence>
+        {showCard && result && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowCard(false)}
+            style={s.overlay}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.88, y: 40 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.88, y: 40 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 300 }}
+              onClick={e => e.stopPropagation()}
+              style={s.modal}
+            >
+              {/* 닫기 버튼 */}
+              <button onClick={() => setShowCard(false)} style={s.closeBtn}>
+                <X size={20} />
+              </button>
+
+              {/* 카드 */}
+              <Card ref={cardRef} result={result} />
+
+              {/* 다운로드 버튼 */}
+              <motion.button
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={downloadCard}
+                style={{ ...s.dlBtn, marginTop: 20 }}
+              >
+                <Download size={15} style={{ marginRight: 6 }} /> 카드 이미지 저장
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -270,19 +308,12 @@ const s = {
   },
   wrap: {
     width: '100%', maxWidth: 820,
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
     position: 'relative', zIndex: 1,
   },
   header: { textAlign: 'center', marginBottom: 40 },
-  badge: {
-    display: 'inline-block', fontSize: 11, letterSpacing: 3,
-    color: '#8a7065', textTransform: 'uppercase', marginBottom: 18,
-  },
-  title: {
-    fontFamily: "'Noto Serif KR',serif",
-    fontSize: 54, fontWeight: 300, color: '#f5ebe0',
-    letterSpacing: -1, marginBottom: 14, lineHeight: 1.1,
-  },
+  badge: { display: 'inline-block', fontSize: 11, letterSpacing: 3, color: '#8a7065', textTransform: 'uppercase', marginBottom: 18 },
+  title: { fontFamily: "'Noto Serif KR',serif", fontSize: 54, fontWeight: 300, color: '#f5ebe0', letterSpacing: -1, marginBottom: 14, lineHeight: 1.1 },
   sub: { color: '#6a5a52', fontSize: 16, lineHeight: 1.7 },
   card: {
     width: '100%',
@@ -292,10 +323,7 @@ const s = {
     backdropFilter: 'blur(12px)',
     textAlign: 'center',
   },
-  cardDesc: {
-    fontFamily: "'Noto Serif KR',serif",
-    color: '#c4a882', fontSize: 18, marginBottom: 36,
-  },
+  cardDesc: { fontFamily: "'Noto Serif KR',serif", color: '#c4a882', fontSize: 18, marginBottom: 36 },
   micBtn: {
     width: 110, height: 110, borderRadius: '50%', border: 'none',
     background: 'linear-gradient(135deg,#8b6340,#c4a882)',
@@ -303,42 +331,58 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     margin: '0 auto 28px',
     boxShadow: '0 8px 36px rgba(196,168,130,0.28)',
-    transition: 'box-shadow 0.2s',
   },
   hint: { color: '#4a3a32', fontSize: 14 },
   err: { color: '#e07070', marginTop: 16, fontSize: 14 },
-  label: {
-    color: '#c4a882', fontSize: 11, letterSpacing: 2.5,
-    textTransform: 'uppercase', marginBottom: 18, fontWeight: 500,
-  },
+  label: { color: '#c4a882', fontSize: 11, letterSpacing: 2.5, textTransform: 'uppercase', marginBottom: 18, fontWeight: 500 },
   row: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
-  emoTag: {
-    background: 'rgba(196,168,130,0.12)', border: '1px solid rgba(196,168,130,0.25)',
-    borderRadius: 20, padding: '6px 18px', fontSize: 15, color: '#f0e0cc',
-  },
+  emoTag: { background: 'rgba(196,168,130,0.12)', border: '1px solid rgba(196,168,130,0.25)', borderRadius: 20, padding: '6px 18px', fontSize: 15, color: '#f0e0cc' },
   kwTag: { color: '#6a5a52', fontSize: 14 },
-  letterBox: {
-    fontFamily: "'Noto Serif KR',serif",
-    fontSize: 16, lineHeight: 2.1, color: '#e8d5c0',
-    background: 'rgba(0,0,0,0.15)', borderRadius: 16, padding: '24px 28px',
-  },
-  twoCol: {
-    display: 'flex', gap: 36, alignItems: 'flex-start',
-    flexWrap: 'wrap', textAlign: 'left',
-  },
-  dlBtn: {
-    display: 'inline-flex', alignItems: 'center',
-    background: 'linear-gradient(135deg,#8b6340,#c4a882)',
-    border: 'none', borderRadius: 12, padding: '10px 26px',
-    color: '#fff', fontSize: 14, cursor: 'pointer',
-    fontFamily: "'Noto Sans KR',sans-serif",
-    boxShadow: '0 4px 20px rgba(196,168,130,0.25)',
+  letterBox: { fontFamily: "'Noto Serif KR',serif", fontSize: 16, lineHeight: 2.1, color: '#e8d5c0', background: 'rgba(0,0,0,0.15)', borderRadius: 16, padding: '24px 28px' },
+  qrClickable: {
+    width: 200, height: 200, borderRadius: 16, cursor: 'pointer',
+    border: '2px solid rgba(196,168,130,0.25)',
+    boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+    display: 'block', margin: '0 auto',
+    transition: 'box-shadow 0.2s',
   },
   resetBtn: {
     display: 'inline-flex', alignItems: 'center',
     background: 'transparent', border: '1px solid rgba(196,168,130,0.25)',
     borderRadius: 12, padding: '10px 28px',
-    color: '#8a7065', fontSize: 14, cursor: 'pointer',
-    fontFamily: "'Noto Sans KR',sans-serif",
+    color: '#8a7065', fontSize: 14, cursor: 'pointer', fontFamily: "'Noto Sans KR',sans-serif",
+  },
+
+  // 모달
+  overlay: {
+    position: 'fixed', inset: 0, zIndex: 100,
+    background: 'rgba(10,5,3,0.85)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 24,
+  },
+  modal: {
+    position: 'relative',
+    width: '100%', maxWidth: 600,
+    maxHeight: '92vh', overflowY: 'auto',
+    background: 'transparent',
+    borderRadius: 24,
+    padding: '40px 20px 20px',
+    boxShadow: '0 40px 100px rgba(0,0,0,0.7)',
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+  },
+  closeBtn: {
+    position: 'absolute', top: 8, right: 8,
+    background: 'rgba(44,26,14,0.8)', border: '1px solid rgba(196,168,130,0.3)',
+    borderRadius: '50%', width: 36, height: 36,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', color: '#c4a882', zIndex: 10,
+  },
+  dlBtn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%',
+    background: 'linear-gradient(135deg,#8b6340,#c4a882)',
+    border: 'none', borderRadius: 14, padding: '13px',
+    color: '#fff', fontSize: 15, cursor: 'pointer', fontFamily: "'Noto Sans KR',sans-serif",
+    boxShadow: '0 4px 20px rgba(196,168,130,0.2)',
   },
 }

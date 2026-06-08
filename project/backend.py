@@ -5,18 +5,15 @@ import base64
 import tempfile
 import requests
 import qrcode
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from datetime import datetime
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 AudioSegment.converter = "/Users/kimminyoung/opt/anaconda3/bin/ffmpeg"
-FONT_PATH = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 
 app = FastAPI()
 app.add_middleware(
@@ -114,62 +111,6 @@ def create_qr_base64(text: str) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def create_card_base64(letter, emotions, keywords, date_str, qr_b64) -> str:
-    W, H = 900, 1200
-    BG, DARK, MID, LIGHT, ACCENT = "#FFF8F0", "#3D2B1F", "#7A5C4F", "#C4A882", "#E8C5A0"
-    card = Image.new("RGB", (W, H), BG)
-    draw = ImageDraw.Draw(card)
-
-    def font(size):
-        try:
-            return ImageFont.truetype(FONT_PATH, size)
-        except Exception:
-            return ImageFont.load_default()
-
-    for i in range(3):
-        draw.rectangle([12+i, 12+i, W-12-i, H-12-i], outline=LIGHT)
-    draw.rectangle([0, 0, W, 160], fill=ACCENT)
-    draw.text((W//2, 60), "💌 Dear Me", fill=DARK, font=font(52), anchor="mm")
-    draw.text((W//2, 118), "미래의 나에게 보내는 타임캡슐", fill=MID, font=font(24), anchor="mm")
-    draw.text((W//2, 185), f"📅  {date_str}", fill=MID, font=font(22), anchor="mm")
-
-    x = 50
-    for emo in emotions:
-        bbox = draw.textbbox((0, 0), emo, font=font(22))
-        w = bbox[2] - bbox[0] + 24
-        draw.rounded_rectangle([x, 215, x+w, 252], radius=12, fill=ACCENT, outline=LIGHT)
-        draw.text((x+12, 233), emo, fill=DARK, font=font(22), anchor="lm")
-        x += w + 12
-
-    draw.text((50, 266), "  #" + "  #".join(keywords), fill=LIGHT, font=font(20))
-    draw.line([(50, 302), (W-50, 302)], fill=ACCENT, width=2)
-
-    y = 328
-    for paragraph in letter.split("\n"):
-        line = ""
-        for word in paragraph.split(" "):
-            test = line + word + " "
-            if draw.textbbox((0, 0), test, font=font(22))[2] > W - 100:
-                draw.text((60, y), line.rstrip(), fill=DARK, font=font(22))
-                y += 36
-                line = word + " "
-            else:
-                line = test
-        if line.strip():
-            draw.text((60, y), line.rstrip(), fill=DARK, font=font(22))
-            y += 36
-        y += 8
-
-    qr_size = 200
-    qr_img = Image.open(io.BytesIO(base64.b64decode(qr_b64))).resize((qr_size, qr_size))
-    card.paste(qr_img, (W - qr_size - 50, H - qr_size - 80))
-    draw.text((W - qr_size//2 - 50, H - 55), "QR로 편지 보기", fill=MID, font=font(18), anchor="mm")
-    draw.text((55, H - 65), "✉️ Time Capsule", fill=LIGHT, font=font(20))
-
-    buf = io.BytesIO()
-    card.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
-
 
 @app.post("/api/process")
 async def process(audio: UploadFile = File(...)):
@@ -192,7 +133,6 @@ async def process(audio: UploadFile = File(...)):
 
     qr_b64 = create_qr_base64(letter)
     date_str = datetime.now().strftime("%Y년 %m월 %d일")
-    card_b64 = create_card_base64(letter, emotions, keywords, date_str, qr_b64)
 
     return {
         "stt_text": stt_text,
@@ -201,7 +141,6 @@ async def process(audio: UploadFile = File(...)):
         "letter": letter,
         "tts_b64": tts_b64,
         "qr_b64": qr_b64,
-        "card_b64": card_b64,
         "date": date_str,
     }
 
