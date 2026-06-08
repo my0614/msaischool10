@@ -5,8 +5,11 @@ import uuid
 import base64
 import sqlite3
 import tempfile
+import smtplib
 import requests
 import qrcode
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from PIL import Image
 from datetime import datetime
 from dotenv import load_dotenv
@@ -40,9 +43,21 @@ def init_db():
             date_created    TEXT,
             date_scheduled  TEXT,
             refresh_token   TEXT,
-            status          TEXT DEFAULT 'pending'
+            status          TEXT DEFAULT 'pending',
+            send_method     TEXT DEFAULT 'kakao',
+            discord_webhook TEXT,
+            target_email    TEXT
         )
     """)
+    for col, typ in [
+        ("send_method",     "TEXT DEFAULT 'kakao'"),
+        ("discord_webhook", "TEXT"),
+        ("target_email",    "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE schedules ADD COLUMN {col} {typ}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -98,6 +113,127 @@ def send_kakao_message(job_id: str):
     conn.execute("UPDATE schedules SET status=? WHERE id=?", (status, job_id))
     conn.commit(); conn.close()
     print(f"[Kakao] 발송 {status}: {job_id}")
+
+
+# ── Discord 웹훅 발송 ────────────────────────────────────────
+def send_discord_message(job_id: str, webhook_url: str, letter: str, emotions: list, keywords: list):
+    preview = letter[:400] + "..." if len(letter) > 400 else letter
+    payload = {
+        "embeds": [{
+            "title": "💌 미래의 나에게 | Dear Me",
+            "description": preview,
+            "color": 0xC4985A,
+            "fields": [
+                {"name": "오늘의 감정", "value": " ".join(emotions), "inline": True},
+                {"name": "키워드", "value": "  ".join(f"#{k}" for k in keywords), "inline": True},
+            ],
+            "footer": {"text": f"📅 {datetime.now().strftime('%Y년 %m월 %d일')} | Time Capsule Letter"},
+        }]
+    }
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        resp = requests.post(webhook_url, json=payload)
+        status = "sent" if resp.status_code in (200, 204) else "failed"
+        print(f"[Discord] 발송 {status}: {job_id} ({resp.status_code})")
+    except Exception as e:
+        status = "failed"
+        print(f"[Discord] 발송 오류: {e}")
+    conn.execute("UPDATE schedules SET status=? WHERE id=?", (status, job_id))
+    conn.commit(); conn.close()
+
+
+# ── 이메일 발송 ──────────────────────────────────────────────
+def send_email_message(job_id: str, to_email: str, letter: str, emotions: list, keywords: list):
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASSWORD")
+
+    if not smtp_user or not smtp_pass:
+        print("[Email] .env에 SMTP_USER, SMTP_PASSWORD가 없습니다.")
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("UPDATE schedules SET status='failed' WHERE id=?", (job_id,))
+        conn.commit(); conn.close()
+        return
+
+    letter_html = letter.replace("\n", "<br>")
+    keywords_str = "  ".join(f"#{k}" for k in keywords)
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "💌 미래의 나에게 - Dear Me"
+    msg["From"]    = smtp_user
+    msg["To"]      = to_email
+
+    html = f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<style>
+  body{{font-family:'Noto Serif KR',Georgia,serif;background:#f5e8d0;margin:0;padding:20px}}
+  .card{{max-width:560px;margin:0 auto;background:linear-gradient(160deg,#FDF6EC,#F5E8D0);
+         border-radius:20px;padding:48px 44px 40px;border:1px solid #E8D5B0}}
+  .top{{text-align:center;color:#C4985A;font-size:11px;letter-spacing:3px;margin-bottom:28px}}
+  .title{{text-align:center;font-size:38px;font-weight:300;color:#2C1A0E;margin:0 0 8px}}
+  .date{{text-align:center;color:#7A5C3A;font-size:12px;letter-spacing:1px;margin-bottom:20px}}
+  .tags{{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:10px}}
+  .tag{{background:rgba(196,152,90,.12);border:1px solid #E8D5B0;border-radius:20px;
+        padding:4px 12px;font-size:14px;color:#2C1A0E}}
+  .kws{{text-align:center;color:#C4985A;font-size:12px;margin-bottom:28px}}
+  .divider{{text-align:center;color:#E8D5B0;margin-bottom:24px}}
+  .letter{{font-size:14px;line-height:2.1;color:#3a2510;background:rgba(255,255,255,.45);
+           border-radius:12px;padding:20px 24px;border:1px solid rgba(232,213,176,.6)}}
+  .footer{{text-align:center;margin-top:28px;color:#C4985A;font-size:10px;letter-spacing:2px}}
+</style></head>
+<body>
+  <div class="card">
+    <div class="top">✦ TIME CAPSULE ✦</div>
+    <div class="title">💌 Dear Me</div>
+    <div class="date">{datetime.now().strftime("%Y년 %m월 %d일")}</div>
+    <div class="tags">{"".join(f'<span class="tag">{e}</span>' for e in emotions)}</div>
+    <div class="kws">{keywords_str}</div>
+    <div class="divider">─── ✦ ───</div>
+    <div class="letter">{letter_html}</div>
+    <div class="footer">✦ Time Capsule Letter ✦</div>
+  </div>
+</body></html>"""
+
+    msg.attach(MIMEText(html, "html", "utf-8"))
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, to_email, msg.as_string())
+        status = "sent"
+        print(f"[Email] 발송 완료: {to_email}")
+    except Exception as e:
+        status = "failed"
+        print(f"[Email] 발송 실패: {e}")
+    conn.execute("UPDATE schedules SET status=? WHERE id=?", (status, job_id))
+    conn.commit(); conn.close()
+
+
+# ── 발송 채널 dispatcher ─────────────────────────────────────
+def dispatch_message(job_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT letter, emotions, keywords, refresh_token, status, send_method, discord_webhook, target_email"
+        " FROM schedules WHERE id=?", (job_id,)
+    ).fetchone()
+    conn.close()
+
+    if not row or row[4] != "pending":
+        return
+
+    letter, emotions_json, keywords_json, refresh_token, _, send_method, discord_webhook, target_email = row
+    emotions = json.loads(emotions_json)
+    keywords = json.loads(keywords_json)
+
+    if send_method == "discord":
+        send_discord_message(job_id, discord_webhook, letter, emotions, keywords)
+    elif send_method == "email":
+        send_email_message(job_id, target_email, letter, emotions, keywords)
+    else:
+        send_kakao_message(job_id)
+
 
 # ── APScheduler ─────────────────────────────────────────────
 scheduler = BackgroundScheduler(timezone="Asia/Seoul")
@@ -285,27 +421,44 @@ def kakao_status(state: str):
     return {"authenticated": state in oauth_states}
 
 
-# ── API: 카톡 예약 발송 ──────────────────────────────────────
+# ── API: 예약 발송 ───────────────────────────────────────────
 class ScheduleRequest(BaseModel):
-    state:          str
-    letter:         str
-    emotions:       list[str]
-    keywords:       list[str]
-    date_scheduled: str   # ISO 8601
+    state:           str | None = None
+    send_method:     str = "kakao"        # kakao | discord | email
+    discord_webhook: str | None = None
+    target_email:    str | None = None
+    letter:          str
+    emotions:        list[str]
+    keywords:        list[str]
+    date_scheduled:  str                  # ISO 8601
 
 
 @app.post("/api/schedule")
 def schedule_message(data: ScheduleRequest):
-    if data.state not in oauth_states:
-        return {"error": "카카오 인증이 필요합니다."}
+    refresh_token = None
 
-    tokens  = oauth_states[data.state]
-    job_id  = str(uuid.uuid4())
+    if data.send_method == "kakao":
+        if not data.state or data.state not in oauth_states:
+            return {"error": "카카오 인증이 필요합니다."}
+        refresh_token = oauth_states[data.state]["refresh_token"]
+    elif data.send_method == "discord":
+        if not data.discord_webhook:
+            return {"error": "Discord 웹훅 URL을 입력해주세요."}
+    elif data.send_method == "email":
+        if not data.target_email:
+            return {"error": "이메일 주소를 입력해주세요."}
+    else:
+        return {"error": "지원하지 않는 발송 채널입니다."}
+
+    job_id   = str(uuid.uuid4())
     sched_dt = datetime.fromisoformat(data.date_scheduled)
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        "INSERT INTO schedules VALUES (?,?,?,?,?,?,?,'pending')",
+        """INSERT INTO schedules
+           (id, letter, emotions, keywords, date_created, date_scheduled,
+            refresh_token, status, send_method, discord_webhook, target_email)
+           VALUES (?,?,?,?,?,?,?,'pending',?,?,?)""",
         (
             job_id,
             data.letter,
@@ -313,14 +466,17 @@ def schedule_message(data: ScheduleRequest):
             json.dumps(data.keywords, ensure_ascii=False),
             datetime.now().isoformat(),
             data.date_scheduled,
-            tokens["refresh_token"],
+            refresh_token,
+            data.send_method,
+            data.discord_webhook,
+            data.target_email,
         )
     )
     conn.commit()
     conn.close()
 
     scheduler.add_job(
-        send_kakao_message,
+        dispatch_message,
         trigger=DateTrigger(run_date=sched_dt),
         args=[job_id],
         id=job_id,
