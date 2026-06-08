@@ -1,6 +1,8 @@
 import os
 import json
 import gradio as gr
+import requests
+from bs4 import BeautifulSoup
 from openai import AzureOpenAI
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -62,6 +64,27 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_stock_news",
+            "description": "네이버 금융에서 한국 주식 종목의 최신 뉴스 기사를 가져옵니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "종목명 (예: 삼성전자, 카카오, SK하이닉스)",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "가져올 뉴스 개수 (기본값: 5)",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -102,16 +125,60 @@ def get_stock_price(name):
     }, ensure_ascii=False)
 
 
+def get_stock_news(name, count=5):
+    name_lower = name.lower().replace(" ", "")
+    code = None
+    for key, val in STOCK_CODE.items():
+        if key.replace(" ", "") in name_lower:
+            code = val
+            break
+    if not code:
+        return json.dumps({"error": f"{name}의 종목 코드를 찾을 수 없습니다."})
+
+    url = f"https://finance.naver.com/item/news_news.naver?code={code}&page=1&clusterId="
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Referer": "https://finance.naver.com",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=5)
+        resp.encoding = "euc-kr"
+        soup = BeautifulSoup(resp.text, "html.parser")
+        news_list = []
+        for row in soup.select("table.type5 tr"):
+            title_tag = row.select_one("td.title a")
+            date_tag = row.select_one("td.date")
+            if title_tag and date_tag:
+                news_list.append({
+                    "제목": title_tag.get_text(strip=True),
+                    "날짜": date_tag.get_text(strip=True),
+                })
+            if len(news_list) >= count:
+                break
+        if not news_list:
+            return json.dumps({"error": "뉴스를 찾을 수 없습니다."})
+        return json.dumps({"종목명": name, "뉴스": news_list}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def call_tool(tool_name, args):
     if tool_name == "get_multi_data":
         return get_multi_data(args.get("num1"), args.get("num2"))
     elif tool_name == "get_stock_price":
         return get_stock_price(args.get("name"))
+    elif tool_name == "get_stock_news":
+        return get_stock_news(args.get("name"), args.get("count", 5))
     return json.dumps({"error": "Unknown function"})
 
 
+SYSTEM_PROMPT = """당신은 한국 주식 정보를 제공하는 챗봇입니다.
+주가 조회, 뉴스 검색, 숫자 계산 요청이 들어오면 반드시 제공된 함수를 호출하여 실제 데이터를 가져와서 답변하세요.
+절대로 "직접 제공할 수 없다"거나 "외부 사이트를 확인하라"고 하지 마세요. 항상 함수를 통해 데이터를 조회하세요."""
+
+
 def chat(user_message, history):
-    messages = []
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": user_message})
@@ -149,13 +216,13 @@ def chat(user_message, history):
 
 
 with gr.Blocks(title="주식 & 계산 챗봇") as demo:
-    gr.Markdown("# 📈 주식 & 계산 챗봇\n지원 종목: 삼성전자, SK하이닉스, 카카오, 네이버, LG에너지솔루션, 현대차, 기아")
+    gr.Markdown("# 📈 주식 & 뉴스 챗봇\n**지원 기능:** 주가 조회 · 뉴스 검색 · 숫자 곱하기\n**지원 종목:** 삼성전자, SK하이닉스, 카카오, 네이버, LG에너지솔루션, 현대차, 기아")
     gr.ChatInterface(
         fn=chat,
         examples=[
             "삼성전자 주가 알려줘",
-            "SK하이닉스 주가 얼마야?",
-            "카카오랑 네이버 주가 비교해줘",
+            "SK하이닉스 최신 뉴스 보여줘",
+            "카카오 뉴스 3개만 알려줘",
             "35 곱하기 48 계산해줘",
         ],
         chatbot=gr.Chatbot(height=450),
