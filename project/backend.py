@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import io
 import json
@@ -18,6 +19,7 @@ from pydub import AudioSegment
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
@@ -329,7 +331,7 @@ app.add_middleware(
 
 
 # ── STT ─────────────────────────────────────────────────────
-def request_stt(audio_bytes: bytes) -> str | None:
+def request_stt(audio_bytes: bytes) -> Optional[str]:
     endpoint = "https://eastus.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=ko-KR&format=detailed"
     headers = {
         "Ocp-Apim-Subscription-Key": os.getenv("AZURE_SPEECH_KEY"),
@@ -353,7 +355,7 @@ def request_stt(audio_bytes: bytes) -> str | None:
 
 
 # ── GPT ─────────────────────────────────────────────────────
-def request_gpt(text: str) -> dict | None:
+def request_gpt(text: str) -> Optional[dict]:
     endpoint = "https://fimtrus-foundry10.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview"
     headers = {"Authorization": f"Bearer {os.getenv('AZURE_GPT_KEY')}", "Content-Type": "application/json"}
     prompt = f"""사용자가 오늘 하루의 감정과 생각을 말했습니다:
@@ -389,7 +391,7 @@ letter: 미래의 나에게 보내는 편지 (200~300자, 한국어)"""
 
 
 # ── TTS ─────────────────────────────────────────────────────
-def request_tts(text: str) -> bytes | None:
+def request_tts(text: str) -> Optional[bytes]:
     endpoint = "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1"
     headers = {
         "Content-Type": "application/ssml+xml",
@@ -615,13 +617,13 @@ def kakao_exchange(code: str, state: str):
 
 # ── API: 예약 발송 ───────────────────────────────────────────
 class ScheduleRequest(BaseModel):
-    state:           str | None = None
+    state:           Optional[str] = None
     send_method:     str = "kakao"        # kakao | discord | email
-    discord_webhook: str | None = None
-    target_email:    str | None = None
+    discord_webhook: Optional[str] = None
+    target_email:    Optional[str] = None
     letter:          str
-    emotions:        list[str]
-    keywords:        list[str]
+    emotions:        List[str]
+    keywords:        List[str]
     date_scheduled:  str                  # ISO 8601
 
 
@@ -680,6 +682,40 @@ def schedule_message(data: ScheduleRequest):
         "job_id":       job_id,
         "scheduled_at": data.date_scheduled,
     }
+
+
+# ── API: 비밀 친구 챗봇 ──────────────────────────────────────
+SYSTEM_PROMPT = """너는 '비밀 친구'야. Dear Me 서비스를 통해 오늘 하루를 기록한 사용자 곁에서
+따뜻하게 공감하고 위로해주는 친구 같은 존재야.
+
+대화 방식:
+- 반말로 친근하게 대화해
+- 사용자의 감정을 먼저 공감하고, 판단하지 마
+- 너무 길게 말하지 말고 자연스럽게 주고받는 느낌으로
+- 가끔 오늘 어땠는지, 무슨 생각이 드는지 부드럽게 물어봐
+- 억지로 긍정적이려 하지 말고 솔직하게 공감해줘
+- 이모지 1~2개 정도만 자연스럽게 써"""
+
+class ChatRequest(BaseModel):
+    messages: List[Dict[str, Any]]
+
+@app.post("/api/chat")
+def chat(data: ChatRequest):
+    endpoint = "https://fimtrus-foundry10.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview"
+    headers  = {"Authorization": f"Bearer {os.getenv('AZURE_GPT_KEY')}", "Content-Type": "application/json"}
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + data.messages
+
+    resp = requests.post(endpoint, headers=headers, json={
+        "messages": messages,
+        "max_completion_tokens": 300,
+        "temperature": 0.9,
+    })
+    if resp.status_code != 200:
+        return {"error": "챗봇 응답에 실패했습니다."}
+
+    content = resp.json()["choices"][0]["message"]["content"]
+    return {"reply": content}
 
 
 if __name__ == "__main__":

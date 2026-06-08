@@ -6,6 +6,7 @@ import Card from './Card'
 import ScheduleSection from './ScheduleSection'
 import KakaoCallback from './KakaoCallback'
 import CardViewer from './CardViewer'
+import Chatbot from './Chatbot'
 import './index.css'
 
 const API = `http://${window.location.hostname}:8000`
@@ -301,6 +302,8 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <Chatbot />
     </div>
   )
 }
