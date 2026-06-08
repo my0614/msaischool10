@@ -1,0 +1,19 @@
+# env
+.env
+*.txt
+*.pem
+.DS_Store
+
+# output files
+*.wav
+*.png
+
+# python
+__pycache__/
+*.pyc
+venv/
+
+# node
+node_modules/
+dist/
+.vscode/
