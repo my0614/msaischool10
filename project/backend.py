@@ -13,7 +13,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 from PIL import Image
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+import threading
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from fastapi import FastAPI, UploadFile, File
@@ -137,7 +138,7 @@ def send_discord_message(job_id: str, webhook_url: str, letter: str, emotions: l
     preview = letter[:400] + "..." if len(letter) > 400 else letter
     payload = {
         "embeds": [{
-            "title": "💌 미래의 나에게 | Dear Me",
+            "title": "💌 미래의 나에게 | Dear Me,",
             "description": preview,
             "color": 0xC4985A,
             "fields": [
@@ -320,7 +321,9 @@ def dispatch_message(job_id: str):
 
 
 # ── APScheduler ─────────────────────────────────────────────
-scheduler = BackgroundScheduler(timezone="Asia/Seoul")
+KST = timezone(timedelta(hours=9))
+
+scheduler = BackgroundScheduler(timezone="Asia/Seoul", job_defaults={"misfire_grace_time": 300})
 scheduler.start()
 
 # ── FastAPI ─────────────────────────────────────────────────
@@ -383,7 +386,14 @@ letter: 미래의 나에게 보내는 편지 (200~300자, 한국어)"""
 
     content = resp.json()["choices"][0]["message"]["content"]
     try:
-        content = content.strip().removeprefix("```json").removesuffix("```").strip()
+        content = content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
         return json.loads(content)
     except Exception as e:
         print(f"JSON 파싱 오류: {e}")
@@ -645,7 +655,10 @@ def schedule_message(data: ScheduleRequest):
         return {"error": "지원하지 않는 발송 채널입니다."}
 
     job_id   = str(uuid.uuid4())
-    sched_dt = datetime.fromisoformat(data.date_scheduled)
+    # 프론트는 항상 UTC(Z)로 전송 → KST naive datetime으로 변환
+    dt_utc   = datetime.fromisoformat(data.date_scheduled.replace("Z", "+00:00"))
+    sched_dt = dt_utc.astimezone(KST).replace(tzinfo=None)
+    is_immediate = (sched_dt - datetime.now()).total_seconds() < 60
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -669,13 +682,17 @@ def schedule_message(data: ScheduleRequest):
     conn.commit()
     conn.close()
 
-    scheduler.add_job(
-        dispatch_message,
-        trigger=DateTrigger(run_date=sched_dt),
-        args=[job_id],
-        id=job_id,
-        replace_existing=True,
-    )
+    if is_immediate:
+        # 즉시 발송: 스케줄러 없이 백그라운드 스레드에서 직접 실행
+        threading.Thread(target=dispatch_message, args=[job_id], daemon=True).start()
+    else:
+        scheduler.add_job(
+            dispatch_message,
+            trigger=DateTrigger(run_date=sched_dt),
+            args=[job_id],
+            id=job_id,
+            replace_existing=True,
+        )
 
     return {
         "success":      True,
