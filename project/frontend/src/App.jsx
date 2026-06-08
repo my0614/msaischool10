@@ -4,11 +4,23 @@ import { Mic, MicOff, Download, RefreshCw, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import Card from './Card'
 import ScheduleSection from './ScheduleSection'
+import KakaoCallback from './KakaoCallback'
+import CardViewer from './CardViewer'
 import './index.css'
 
-const API = 'http://localhost:8000'
+const API = `http://${window.location.hostname}:8000`
 
 export default function App() {
+  // 카카오 OAuth 콜백 페이지
+  if (window.location.pathname === '/kakao/callback') {
+    return <KakaoCallback />
+  }
+
+  // 타임캡슐 카드 뷰어 (/card/:id)
+  const cardMatch = window.location.pathname.match(/^\/card\/(.+)$/)
+  if (cardMatch) {
+    return <CardViewer cardId={cardMatch[1]} />
+  }
   const [step, setStep] = useState('idle')
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)

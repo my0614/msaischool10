@@ -10,6 +10,7 @@ import requests
 import qrcode
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from PIL import Image
 from datetime import datetime
 from dotenv import load_dotenv
@@ -25,15 +26,28 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 AudioSegment.converter = "/Users/kimminyoung/opt/anaconda3/bin/ffmpeg"
 
 KAKAO_KEY     = os.getenv("KAKAO_REST_API_KEY")
-REDIRECT_URI  = "http://localhost:8000/api/kakao/callback"
+KAKAO_SECRET  = os.getenv("KAKAO_CLIENT_SECRET")
+REDIRECT_URI  = "http://localhost:5173/kakao/callback"
 DB_PATH       = os.path.join(os.path.dirname(__file__), "schedules.db")
 
 # 카카오 OAuth 상태 임시 저장 (메모리)
 oauth_states: dict = {}
 
 # ── DB 초기화 ───────────────────────────────────────────────
+FRONTEND_URL = "http://192.168.200.181:5173"
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cards (
+            id       TEXT PRIMARY KEY,
+            letter   TEXT,
+            emotions TEXT,
+            keywords TEXT,
+            date     TEXT,
+            created_at TEXT
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS schedules (
             id              TEXT PRIMARY KEY,
@@ -79,6 +93,7 @@ def send_kakao_message(job_id: str):
     resp = requests.post("https://kauth.kakao.com/oauth/token", data={
         "grant_type":    "refresh_token",
         "client_id":     KAKAO_KEY,
+        "client_secret": KAKAO_SECRET,
         "refresh_token": refresh_token,
     })
     if resp.status_code != 200:
@@ -156,46 +171,113 @@ def send_email_message(job_id: str, to_email: str, letter: str, emotions: list, 
         conn.commit(); conn.close()
         return
 
-    letter_html = letter.replace("\n", "<br>")
-    keywords_str = "  ".join(f"#{k}" for k in keywords)
+    # QR 코드 생성
+    qr_bytes = None
+    try:
+        qr = qrcode.QRCode(version=1, box_size=8, border=3)
+        qr.add_data(letter)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="#3D2B1F", back_color="white").convert("RGB")
+        buf = io.BytesIO()
+        qr_img.save(buf, format="PNG")
+        qr_bytes = buf.getvalue()
+    except Exception as e:
+        print(f"[Email] QR 생성 오류: {e}")
 
-    msg = MIMEMultipart("alternative")
+    letter_html   = "".join(
+        f'<p style="margin:0 0 {"14px" if line == "" else "2px"};min-height:{"14px" if line == "" else "auto"};">{line if line else "&nbsp;"}</p>'
+        for line in letter.split("\n")
+    )
+    emotion_tags  = "".join(
+        f'<span style="display:inline-block;background:rgba(196,152,90,0.12);border:1px solid #E8D5B0;border-radius:20px;padding:5px 14px;font-size:14px;color:#2C1A0E;margin:3px;font-family:Georgia,serif;">{e}</span>'
+        for e in emotions
+    )
+    keyword_tags  = "&nbsp;&nbsp;".join(
+        f'<span style="font-size:12px;color:#C4985A;letter-spacing:0.5px;">#{k}</span>'
+        for k in keywords
+    )
+    qr_tag        = '<img src="cid:qrcode" width="80" height="80" style="width:80px;height:80px;border-radius:8px;border:1px solid #E8D5B0;display:block;" />' if qr_bytes else ''
+    date_str      = datetime.now().strftime("%Y년 %m월 %d일")
+
+    html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400&family=Noto+Sans+KR:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:24px;background:#f0e0cc;font-family:'Noto Serif KR',Georgia,serif;">
+<div style="max-width:560px;margin:0 auto;background:linear-gradient(160deg,#FDF6EC 0%,#F5E8D0 100%);border-radius:20px;padding:48px 44px 40px;border:1px solid #E8D5B0;position:relative;">
+
+  <!-- 안쪽 테두리 -->
+  <table style="position:absolute;top:8px;left:8px;right:8px;bottom:8px;width:calc(100% - 16px);border-collapse:collapse;pointer-events:none;">
+    <tr><td style="border:1px solid #E8D5B0;border-radius:14px;"></td></tr>
+  </table>
+
+  <!-- 상단 장식 -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:32px;">
+    <tr>
+      <td style="border-bottom:1px solid #E8D5B0;width:40%;"></td>
+      <td style="white-space:nowrap;padding:0 10px;font-size:10px;letter-spacing:3px;color:#C4985A;font-family:'Noto Sans KR',Arial,sans-serif;text-align:center;">✦ TIME CAPSULE ✦</td>
+      <td style="border-bottom:1px solid #E8D5B0;width:40%;"></td>
+    </tr>
+  </table>
+
+  <!-- 제목 영역 -->
+  <div style="text-align:center;margin-bottom:24px;">
+    <div style="font-size:40px;line-height:1;margin-bottom:8px;">💌</div>
+    <h1 style="font-family:'Noto Serif KR',Georgia,serif;font-size:42px;font-weight:300;color:#2C1A0E;margin:0 0 8px;letter-spacing:-0.5px;">Dear Me</h1>
+    <p style="font-size:12px;color:#7A5C3A;letter-spacing:1px;margin:0;font-family:'Noto Sans KR',Arial,sans-serif;">{date_str}</p>
+  </div>
+
+  <!-- 감정 태그 -->
+  <div style="text-align:center;margin-bottom:10px;">{emotion_tags}</div>
+
+  <!-- 키워드 -->
+  <div style="text-align:center;margin-bottom:28px;">{keyword_tags}</div>
+
+  <!-- 구분선 -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:28px;">
+    <tr>
+      <td style="border-bottom:1px solid #E8D5B0;"></td>
+      <td style="white-space:nowrap;padding:0 10px;font-size:10px;color:#C4985A;">✦</td>
+      <td style="border-bottom:1px solid #E8D5B0;"></td>
+    </tr>
+  </table>
+
+  <!-- 편지 본문 -->
+  <div style="font-size:14px;line-height:2.1;color:#3a2510;background:rgba(255,255,255,0.5);border-radius:12px;padding:20px 24px;margin-bottom:32px;border:1px solid rgba(232,213,176,0.6);">
+    {letter_html}
+  </div>
+
+  <!-- 하단: 장식 + QR -->
+  <table style="width:100%;border-collapse:collapse;">
+    <tr>
+      <td style="vertical-align:bottom;font-size:10px;color:#C4985A;letter-spacing:2px;font-family:'Noto Sans KR',Arial,sans-serif;">✦ Time Capsule Letter ✦</td>
+      <td style="vertical-align:bottom;text-align:right;width:96px;">
+        {qr_tag}
+        <p style="font-size:9px;color:#7A5C3A;margin:4px 0 0;text-align:center;letter-spacing:0.5px;font-family:'Noto Sans KR',Arial,sans-serif;">편지 보기</p>
+      </td>
+    </tr>
+  </table>
+
+</div>
+</body>
+</html>"""
+
+    # multipart/related: HTML + 인라인 이미지
+    msg = MIMEMultipart("related")
     msg["Subject"] = "💌 미래의 나에게 - Dear Me"
     msg["From"]    = smtp_user
     msg["To"]      = to_email
-
-    html = f"""<!DOCTYPE html>
-<html lang="ko"><head><meta charset="UTF-8">
-<style>
-  body{{font-family:'Noto Serif KR',Georgia,serif;background:#f5e8d0;margin:0;padding:20px}}
-  .card{{max-width:560px;margin:0 auto;background:linear-gradient(160deg,#FDF6EC,#F5E8D0);
-         border-radius:20px;padding:48px 44px 40px;border:1px solid #E8D5B0}}
-  .top{{text-align:center;color:#C4985A;font-size:11px;letter-spacing:3px;margin-bottom:28px}}
-  .title{{text-align:center;font-size:38px;font-weight:300;color:#2C1A0E;margin:0 0 8px}}
-  .date{{text-align:center;color:#7A5C3A;font-size:12px;letter-spacing:1px;margin-bottom:20px}}
-  .tags{{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:10px}}
-  .tag{{background:rgba(196,152,90,.12);border:1px solid #E8D5B0;border-radius:20px;
-        padding:4px 12px;font-size:14px;color:#2C1A0E}}
-  .kws{{text-align:center;color:#C4985A;font-size:12px;margin-bottom:28px}}
-  .divider{{text-align:center;color:#E8D5B0;margin-bottom:24px}}
-  .letter{{font-size:14px;line-height:2.1;color:#3a2510;background:rgba(255,255,255,.45);
-           border-radius:12px;padding:20px 24px;border:1px solid rgba(232,213,176,.6)}}
-  .footer{{text-align:center;margin-top:28px;color:#C4985A;font-size:10px;letter-spacing:2px}}
-</style></head>
-<body>
-  <div class="card">
-    <div class="top">✦ TIME CAPSULE ✦</div>
-    <div class="title">💌 Dear Me</div>
-    <div class="date">{datetime.now().strftime("%Y년 %m월 %d일")}</div>
-    <div class="tags">{"".join(f'<span class="tag">{e}</span>' for e in emotions)}</div>
-    <div class="kws">{keywords_str}</div>
-    <div class="divider">─── ✦ ───</div>
-    <div class="letter">{letter_html}</div>
-    <div class="footer">✦ Time Capsule Letter ✦</div>
-  </div>
-</body></html>"""
-
     msg.attach(MIMEText(html, "html", "utf-8"))
+
+    if qr_bytes:
+        img_part = MIMEImage(qr_bytes, _subtype="png")
+        img_part.add_header("Content-ID", "<qrcode>")
+        img_part.add_header("Content-Disposition", "inline", filename="qr.png")
+        msg.attach(img_part)
+
     conn = sqlite3.connect(DB_PATH)
     try:
         with smtplib.SMTP(smtp_host, smtp_port) as server:
@@ -351,8 +433,22 @@ async def process(audio: UploadFile = File(...)):
 
     tts_bytes = request_tts(letter)
     tts_b64   = base64.b64encode(tts_bytes).decode() if tts_bytes else None
-    qr_b64    = create_qr_base64(letter)
     date_str  = datetime.now().strftime("%Y년 %m월 %d일")
+
+    # 카드 DB 저장 → QR에 URL 삽입
+    card_id = str(uuid.uuid4())
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO cards (id, letter, emotions, keywords, date, created_at) VALUES (?,?,?,?,?,?)",
+        (card_id, letter,
+         json.dumps(emotions, ensure_ascii=False),
+         json.dumps(keywords, ensure_ascii=False),
+         date_str, datetime.now().isoformat())
+    )
+    conn.commit(); conn.close()
+
+    card_url = f"{FRONTEND_URL}/card/{card_id}"
+    qr_b64   = create_qr_base64(card_url)
 
     return {
         "stt_text": stt_text,
@@ -362,6 +458,26 @@ async def process(audio: UploadFile = File(...)):
         "tts_b64":  tts_b64,
         "qr_b64":   qr_b64,
         "date":     date_str,
+        "card_id":  card_id,
+    }
+
+
+# ── API: 카드 조회 ───────────────────────────────────────────
+@app.get("/api/card/{card_id}")
+def get_card(card_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT letter, emotions, keywords, date FROM cards WHERE id=?", (card_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {"error": "카드를 찾을 수 없습니다."}
+    letter, emotions_json, keywords_json, date = row
+    return {
+        "letter":   letter,
+        "emotions": json.loads(emotions_json),
+        "keywords": json.loads(keywords_json),
+        "date":     date,
     }
 
 
@@ -380,21 +496,46 @@ def kakao_auth_url(state: str):
 
 
 @app.get("/api/kakao/callback")
-def kakao_callback(code: str, state: str):
+def kakao_callback(code: str = None, state: str = None, error: str = None, error_description: str = None):
+    # 사용자가 로그인을 취소하거나 권한 오류가 발생한 경우
+    if error:
+        print(f"[Kakao] OAuth 오류: {error} - {error_description}")
+        return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>로그인 오류</title>
+<style>
+  body {{ font-family: 'Apple SD Gothic Neo', sans-serif; background: #1a0f0a;
+          display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+  .box {{ text-align: center; color: #f5ebe0; max-width: 400px; padding: 20px; }}
+  .emoji {{ font-size: 48px; margin-bottom: 16px; }}
+  p {{ color: #e07070; font-size: 14px; line-height: 1.6; }}
+  code {{ background: #2a1a14; padding: 2px 8px; border-radius: 4px; color: #c4a882; font-size: 12px; }}
+</style></head>
+<body>
+  <div class="box">
+    <div class="emoji">❌</div>
+    <h2 style="color:#f5ebe0">카카오 로그인 실패</h2>
+    <p>오류: <code>{error}</code><br>{error_description or ''}</p>
+    <p style="margin-top:16px;color:#8a7065">카카오 개발자 콘솔에서<br>Redirect URI 등록 및 카카오 로그인 활성화를 확인하세요.</p>
+  </div>
+</body></html>""")
+
+    # 토큰 교환
     resp = requests.post("https://kauth.kakao.com/oauth/token", data={
-        "grant_type":   "authorization_code",
-        "client_id":    KAKAO_KEY,
-        "redirect_uri": REDIRECT_URI,
-        "code":         code,
+        "grant_type":    "authorization_code",
+        "client_id":     KAKAO_KEY,
+        "client_secret": KAKAO_SECRET,
+        "redirect_uri":  REDIRECT_URI,
+        "code":          code,
     })
+
     if resp.status_code == 200:
         tokens = resp.json()
         oauth_states[state] = {
             "access_token":  tokens["access_token"],
             "refresh_token": tokens["refresh_token"],
         }
-
-    return HTMLResponse("""<!DOCTYPE html>
+        print(f"[Kakao] 토큰 발급 성공: state={state}")
+        return HTMLResponse("""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8"><title>로그인 완료</title>
 <style>
   body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #1a0f0a;
@@ -414,11 +555,62 @@ def kakao_callback(code: str, state: str):
     setTimeout(() => window.close(), 1500);
   </script>
 </body></html>""")
+    else:
+        err_data = resp.json()
+        err_code = err_data.get("error_code", "")
+        err_msg  = err_data.get("error_description", resp.text)
+        print(f"[Kakao] 토큰 교환 실패: {err_code} - {err_msg}")
+        return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>로그인 오류</title>
+<style>
+  body {{ font-family: 'Apple SD Gothic Neo', sans-serif; background: #1a0f0a;
+          display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+  .box {{ text-align: center; color: #f5ebe0; max-width: 420px; padding: 20px; }}
+  .emoji {{ font-size: 48px; margin-bottom: 16px; }}
+  p {{ color: #e07070; font-size: 14px; line-height: 1.8; }}
+  code {{ background: #2a1a14; padding: 2px 8px; border-radius: 4px; color: #c4a882; font-size: 12px; }}
+</style></head>
+<body>
+  <div class="box">
+    <div class="emoji">❌</div>
+    <h2 style="color:#f5ebe0">토큰 발급 실패</h2>
+    <p>오류 코드: <code>{err_code}</code><br>{err_msg}</p>
+    <p style="margin-top:16px;color:#8a7065">
+      KOE006: Redirect URI 불일치<br>
+      KOE008: 카카오 로그인 미활성화<br>
+      → 개발자 콘솔에서 확인하세요
+    </p>
+  </div>
+</body></html>""")
 
 
 @app.get("/api/kakao/status/{state}")
 def kakao_status(state: str):
     return {"authenticated": state in oauth_states}
+
+
+# 프론트엔드 콜백(5173)에서 code 받아서 토큰 교환
+@app.get("/api/kakao/exchange")
+def kakao_exchange(code: str, state: str):
+    resp = requests.post("https://kauth.kakao.com/oauth/token", data={
+        "grant_type":    "authorization_code",
+        "client_id":     KAKAO_KEY,
+        "client_secret": KAKAO_SECRET,
+        "redirect_uri":  REDIRECT_URI,
+        "code":          code,
+    })
+    if resp.status_code == 200:
+        tokens = resp.json()
+        oauth_states[state] = {
+            "access_token":  tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+        }
+        print(f"[Kakao] 토큰 발급 성공: state={state}")
+        return {"success": True}
+    else:
+        err = resp.json()
+        print(f"[Kakao] 토큰 교환 실패: {err}")
+        return {"success": False, "error": err.get("error_description", resp.text)}
 
 
 # ── API: 예약 발송 ───────────────────────────────────────────

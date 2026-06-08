@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Clock, Check } from 'lucide-react'
 
-const API = 'http://localhost:8000'
+const API = `http://${window.location.hostname}:8000`
 
 const DATE_OPTIONS = [
   { label: '지금 바로', emoji: '⚡', immediate: true },
