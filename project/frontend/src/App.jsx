@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Download, RefreshCw, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import Card from './Card'
+import ScheduleSection from './ScheduleSection'
 import './index.css'
 
 const API = 'http://localhost:8000'
@@ -232,6 +233,9 @@ export default function App() {
                 />
                 <p style={{ color: '#4a3a32', fontSize: 12, marginTop: 16 }}>클릭하면 카드가 열립니다</p>
               </motion.div>
+
+              {/* 카카오 예약 발송 */}
+              <ScheduleSection result={result} />
 
               <div style={{ textAlign: 'center', marginTop: 20 }}>
                 <motion.button
