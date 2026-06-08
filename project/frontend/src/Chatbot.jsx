@@ -86,36 +86,29 @@ export default function Chatbot() {
 
   return (
     <>
-      {/* 플로팅 버튼 */}
-      <motion.button
-        whileHover={{ scale: 1.08, boxShadow: '0 12px 40px rgba(196,168,130,0.25)' }}
-        whileTap={{ scale: 0.94 }}
-        onClick={() => setOpen(o => !o)}
-        style={s.fab}
-        title="비밀 친구와 대화하기"
-      >
-        <AnimatePresence mode="wait">
-          {open
-            ? <motion.span key="x"
-                initial={{ rotate: -45, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }}
-                exit={{ rotate: 45, opacity: 0 }} transition={{ duration: 0.18 }}>
-                <X size={20} strokeWidth={2} />
-              </motion.span>
-            : <motion.span key="msg"
-                initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.7, opacity: 0 }} transition={{ duration: 0.18 }}>
-                <MessageCircle size={22} strokeWidth={1.8} />
-              </motion.span>
-          }
-        </AnimatePresence>
+      {/* 플로팅 버튼 — 패널 닫혀있을 때만 표시 */}
+      <AnimatePresence>
         {!open && (
-          <motion.div
-            style={s.fabBadge}
-            initial={{ scale: 0 }} animate={{ scale: 1 }}
-            transition={{ delay: 0.6, type: 'spring' }}
-          />
+          <motion.button
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.7, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            whileHover={{ scale: 1.08, boxShadow: '0 12px 40px rgba(196,168,130,0.25)' }}
+            whileTap={{ scale: 0.94 }}
+            onClick={() => setOpen(true)}
+            style={s.fab}
+            title="비밀 친구와 대화하기"
+          >
+            <MessageCircle size={22} strokeWidth={1.8} />
+            <motion.div
+              style={s.fabBadge}
+              initial={{ scale: 0 }} animate={{ scale: 1 }}
+              transition={{ delay: 0.5, type: 'spring' }}
+            />
+          </motion.button>
         )}
-      </motion.button>
+      </AnimatePresence>
 
       {/* 사이드 패널 */}
       <AnimatePresence>
