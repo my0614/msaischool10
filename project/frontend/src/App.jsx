@@ -103,7 +103,7 @@ export default function App() {
           style={s.header}
         >
           <span style={s.badge}>✦ Time Capsule Letter ✦</span>
-          <h1 style={s.title}>💌 Dear Me</h1>
+          <h1 style={s.title}>💌 Dear Me,</h1>
           <p style={s.sub}>오늘의 나를 기록하고, 미래의 나에게 편지를 보내세요</p>
         </motion.header>
 
