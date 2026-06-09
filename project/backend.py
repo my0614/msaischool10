@@ -360,7 +360,7 @@ def request_stt(audio_bytes: bytes) -> Optional[str]:
 # ── GPT ─────────────────────────────────────────────────────
 def request_gpt(text: str) -> Optional[dict]:
     endpoint = "https://fimtrus-foundry10.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview"
-    headers = {"Authorization": f"Bearer {os.getenv('AZURE_GPT_KEY')}", "Content-Type": "application/json"}
+    headers = {"api-key": os.getenv("AZURE_GPT_KEY"), "Content-Type": "application/json"}
     prompt = f"""사용자가 오늘 하루의 감정과 생각을 말했습니다:
 "{text}"
 
@@ -719,7 +719,7 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 def chat(data: ChatRequest):
     endpoint = "https://fimtrus-foundry10.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview"
-    headers  = {"Authorization": f"Bearer {os.getenv('AZURE_GPT_KEY')}", "Content-Type": "application/json"}
+    headers  = {"api-key": os.getenv("AZURE_GPT_KEY"), "Content-Type": "application/json"}
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + data.messages
 
