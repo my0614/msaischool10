@@ -26,26 +26,27 @@ def get_font(width):
         # 지정한 폰트 파일이 없을 경우 PIL 기본 폰트 사용
         return ImageFont.load_default()
     
-def request_vision(image_url, features):
+def request_vision(image_url, features, gender, smart_crops):
     raw_endpoint = os.getenv("AZURE_VISION_ENDPOINT")
     parsed = urlparse(raw_endpoint)
     endpoint = urlunparse(parsed._replace(query=''))
 
     params = {"api-version": "2023-10-01", "features": ",".join(features)}
-    
+
     headers = {
         "Ocp-Apim-Subscription-Key": os.getenv("AZURE_VISION_KEY"),
         "Content-Type": "application/json",
     }
 
-    body = {"uri": image_url}
+    body = {"url": image_url}
 
-    response = requests.post(
-        endpoint,
-        headers=headers,
-        params=params,
-        json=body
-    )
+    if "caption" in features or "denseCaptions" in features:
+        params.update({"gender-neutral-caption": gender})
+
+    if "smartCrops" in features:
+        params.update({"smartcrops-aspect-ratios": smart_crops})
+
+    response = requests.post(endpoint, params=params, headers=headers, json=body)
 
     if not response.ok:
         print(f"Error: {response.status_code} - {response.text}")
@@ -121,8 +122,11 @@ with gr.Blocks() as demo:
             
         return gr.update(visible=is_show_gender), gr.update(visible=is_show_smart_crops)
 
-    def click_send(image_url, features):
-        response_json = request_vision(image_url, features)
+    def click_send(image_url, features, gender, smart_crops):
+        print(gender, smart_crops)
+        response_json = request_vision(image_url, features, gender, smart_crops)
+        if response_json is None:
+            return None, {"error": "API 호출 실패. 키/엔드포인트를 확인하세요."}
         result_image = draw_image(image_url, response_json)
         return result_image, response_json
 
@@ -157,7 +161,7 @@ with gr.Blocks() as demo:
             
         send_button.click(
             click_send,
-            inputs=[image_url_text, features_checkbox],
+            inputs=[image_url_text, features_checkbox, gender_radio, smart_crops_text],
             outputs=[output_image, output_json],
         )
         
