@@ -82,6 +82,23 @@ def draw_image(image_url, data):
             else:
                 text = "crop {}".format(block_box.get('aspectRatio', ''))
             draw.rectangle([(box['x'], box['y']), (box['x']+box['w'], box['y']+box['h'])], outline=color, width=2)
+            text = ""
+
+            if "objectsResult" == feature_key:
+                tag = block_box.get("tags")[0]
+                name = tag["name"]
+                confidence = tag["confidence"]
+                text = "{}({:.2f}%)".format(name, confidence * 100)
+
+            elif "denseCaptionsResult" == feature_key:
+                caption_text = block_box["text"]
+                confidence = block_box["confidence"]
+                text = "{}({:.2f}%)".format(caption_text, confidence * 100)
+
+            elif "smartCropsResult" == feature_key:
+                ratio = block_box["aspectRatio"]
+                text = "smartCrops : {:.2f}".format(ratio)
+
             draw.text((box['x']+5, box['y']+5), text, fill=color, font=font)
 
     return image
@@ -90,36 +107,63 @@ with gr.Blocks() as demo:
 
     FEATURE_LIST = ["objects", "caption", "denseCaptions", "tags", "smartCrops"]
 
-    def change_features(check_list):
-        print("change", check_list)
+    def change_features(checked_list):
+        print("change", checked_list)
+        
+        is_show_gender = False
+        is_show_smart_crops = False
+        
+        if "caption" in checked_list or "denseCaptions" in checked_list:
+            is_show_gender = True
+            
+        if "smartCrops" in checked_list:
+            is_show_smart_crops = True
+            
+        return gr.update(visible=is_show_gender), gr.update(visible=is_show_smart_crops)
 
     def click_send(image_url, features):
         response_json = request_vision(image_url, features)
-        if response_json is None:
-            return None, {"error": "API 호출 실패. 엔드포인트/키/URL을 확인하세요."}
         result_image = draw_image(image_url, response_json)
         return result_image, response_json
 
-    features_checkbox = gr.CheckboxGroup(
-        label="기능 선택", choices=FEATURE_LIST, value=["objects"]
-    )
-
-    image_url_text = gr.Textbox(
-        label="이미지 경로",
-        value="https://images.unsplash.com/photo-1773332598289-ed0444ad1d6f",
-    )
-    send_button = gr.Button("전송")
-
-    with gr.Row():
-        output_image = gr.Image(label="결과 이미지", interactive=False, type="pil")
-        output_json = gr.JSON(label="결과 JSON")
-
-    send_button.click(
-        click_send,
-        inputs=[image_url_text, features_checkbox],
-        outputs=[output_image, output_json],
-    )
-
-    features_checkbox.change(change_features, inputs=[features_checkbox])
-
+    with gr.Column():
+        features_checkbox = gr.CheckboxGroup(
+            label="기능 선택",
+            choices=FEATURE_LIST,
+            value=["objects", "caption", "denseCaptions", "tags", "smartCrops"],
+        )
+        
+        gender_radio = gr.Radio(
+            label="성별 중립 옵션",
+            choices=[("중립", True), ("구분", False)],
+            value=False,
+            interactive=True,
+        )
+        
+        smart_crops_text = gr.Textbox(
+            label="smartCrops 크기", placeholder="ex) 0.75,1.8", interactive=True
+        )
+        
+        image_url_text = gr.Textbox(
+            label="이미지 경로",
+            value="https://images.unsplash.com/photo-1773332598289-ed0444ad1d6f",
+        )
+        
+        send_button = gr.Button("전송")
+        
+        with gr.Row():
+            output_image = gr.Image(label="결과 이미지", interactive=False, type="pil")
+            output_json = gr.JSON(label="결과 JSON")
+            
+        send_button.click(
+            click_send,
+            inputs=[image_url_text, features_checkbox],
+            outputs=[output_image, output_json],
+        )
+        
+        features_checkbox.change(
+            change_features,
+            inputs=[features_checkbox],
+            outputs=[gender_radio, smart_crops_text],
+        )
 demo.launch()
