@@ -110,3 +110,42 @@ if not upload_result.is_batch_successful:
         print(f"{image.source_url}: {image.status}")
 else:
     print(f"이미지 {len(tagged_images)}개 업로드 완료")
+    
+    
+# train
+if len(trainer.get_iterations(project.id)) > 0:
+    iteration = trainer.get_iterations(project.id)[0]
+else:
+    iteration = trainer.train_project(project.id)
+
+print(iteration)
+
+while iteration.status == "Training":
+    print(iteration.name, iteration.status)
+    time.sleep(3)
+    iteration = trainer.get_iteration(project.id, iteration.id)
+
+print("학습완료 ->", iteration.name, iteration.status)
+    
+# 배포
+publish_name = "kitchen_v1"
+try:
+    trainer.publish_iteration(project.id, iteration.id, publish_name, RESOURCE_ID)
+except Exception as e:
+    print("이미 게시된 모델입니다.", publish_name)
+    
+# predictor
+with open("../data/fork/fork_1.jpg", "rb") as image_file:
+    image_data = image_file.read()
+response = predictor.detect_image(project.id, publish_name, image_data)
+
+for prediction in response.predictions:
+    name = prediction.tag_name
+    probability = prediction.probability
+    bounding_box = prediction.bounding_box
+    x = bounding_box.left
+    y = bounding_box.top
+    w = bounding_box.width
+    h = bounding_box.height
+    if probability > 0.5:
+        print("{}({:.2f}%) {} {} {} {}".format(name, probability * 100, x, y, w, h))
