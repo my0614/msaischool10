@@ -10,6 +10,10 @@ from azure.cognitiveservices.vision.customvision.training.models import (
     Region,
 )
 from msrest.authentication import ApiKeyCredentials
+from PIL import Image, ImageDraw, ImageFont
+import platform
+import requests
+from io import BytesIO
 from dotenv import load_dotenv
 import os, time, uuid
 import json
@@ -23,6 +27,19 @@ TRAIN_KEY = os.getenv("CUSTOM_VISION_TRAIN_KEY")
 PREDICTION_KEY = os.getenv("CUSTOM_VISION_PREDICTION_KEY")
 RESOURCE_ID = os.getenv("CUSTOM_VISION_RESOURCE_ID")
 
+def get_font(width):
+    font_size = (width / 900) * 15
+ 
+    try:
+        if platform.system() == "Windows":
+            return ImageFont.truetype("malgun.ttf", font_size)
+        elif platform.system() == "Darwin":  # macOS
+            return ImageFont.truetype("AppleGothic.ttf", font_size)
+        else:  # Linux 등
+            return ImageFont.load_default(size=font_size)
+    except IOError:
+        return ImageFont.load_default()
+    
 # trainer, predition 객체화
 training_credentials = ApiKeyCredentials(in_headers={"Training-key": TRAIN_KEY})
 prediction_credentials = ApiKeyCredentials(
@@ -135,17 +152,69 @@ except Exception as e:
     print("이미 게시된 모델입니다.", publish_name)
     
 # predictor
-with open("../data/fork/fork_1.jpg", "rb") as image_file:
-    image_data = image_file.read()
-response = predictor.detect_image(project.id, publish_name, image_data)
+# with open("../data/fork/fork_1.jpg", "rb") as image_file:
+#     image_data = image_file.read()
+# response = predictor.detect_image(project.id, publish_name, image_data)
+
+# for prediction in response.predictions:
+#     name = prediction.tag_name
+#     probability = prediction.probability
+#     bounding_box = prediction.bounding_box
+#     x = bounding_box.left
+#     y = bounding_box.top
+#     w = bounding_box.width
+#     h = bounding_box.height
+#     if probability > 0.5:
+#         print("{}({:.2f}%) {} {} {} {}".format(name, probability * 100, x, y, w, h))
+image_url = "https://images.unsplash.com/photo-1668853060178-2d53667b7345?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+
+response = requests.get(image_url)
+image_data = response.content
+
+image = Image.open(BytesIO(image_data))
+draw = ImageDraw.Draw(image)
+
+image_width, image_height = image.size
+font = get_font(image_width)
+
+response = predictor.detect_image_url(project.id, publish_name, image_url)
+# response = predictor.detect_image(project.id, publish_name, image_data)
 
 for prediction in response.predictions:
     name = prediction.tag_name
     probability = prediction.probability
     bounding_box = prediction.bounding_box
-    x = bounding_box.left
-    y = bounding_box.top
-    w = bounding_box.width
-    h = bounding_box.height
+    x = bounding_box.left * image_width
+    y = bounding_box.top * image_height
+    w = bounding_box.width * image_width
+    h = bounding_box.height * image_height
+    
     if probability > 0.5:
         print("{}({:.2f}%) {} {} {} {}".format(name, probability * 100, x, y, w, h))
+        # 결과 값을 통해 이미지에 그려 준다.
+        draw.rectangle([(x, y), (x + w, y + h)], outline="red", width=2)
+        draw.text(
+            (x + 10, y + 10),
+            "{}({:.2f}%)".format(name, probability * 100),
+            fill="red",
+            font=font,
+        )
+
+output_path = os.path.join(os.path.dirname(__file__), "result_20260610.jpg")
+image.save(output_path)
+print(f"결과 이미지 저장 완료: {output_path}")
+
+# model export
+from azure.cognitiveservices.vision.customvision.training.models import ExportPlatform
+
+export_list = trainer.get_exports(project.id, iteration.id)
+
+if len(export_list) > 0:
+    export = export_list[0]
+else:
+    export = trainer.export_iteration(project.id, iteration.id, ExportPlatform.onnx)
+
+#print(export.download_uri)
+
+# model download
+
