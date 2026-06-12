@@ -28,22 +28,46 @@ net.setInput(blob)
 layer_name_list = net.getLayerNames()
 out_layer_list = net.getUnconnectedOutLayersNames()
 
-prediction_list = net.forward("yolo_82")
+detection_list = net.forward(out_layer_list)
+bounding_box_list = list()
+confidence_list = list()
 
-for prediction in prediction_list:
-    bounding_box = prediction[:4] * np.array(
-        [image_width, image_height, image_width, image_height]
-    )
-    center_x, center_y, w, h = bounding_box
-    score_list = prediction[5:]
+for prediction_list, color in zip(detection_list, ["yellow", "aqua", "springgreen"]):
+    for prediction in prediction_list:
+        bounding_box = prediction[:4] * np.array(
+            [image_width, image_height, image_width, image_height]
+        )
+        center_x, center_y, w, h = bounding_box
+        score_list = prediction[5:]
+        
+        x = int(center_x - w / 2)
+        y = int(center_y - h / 2)
+        
+        label_index = np.argmax(score_list)
+        confidence = score_list[label_index]
+        
+        if confidence > 0:
+            # draw.rectangle([(x, y), (x + w, y + h)], outline=color, width=2)
+            bounding_box_list.append(bounding_box)
+            confidence_list.append(confidence)
+    # print(score_list[label_index], label_index, label_list[label_index])
+
+extracted_index_list = cv2.dnn.NMSBoxes(bounding_box_list, confidence_list, 0.5, 0.5)
+
+
+for extracted_index in extracted_index_list:
     
+    bounding_box = bounding_box_list[extracted_index]
+    center_x, center_y, w, h = bounding_box
+
     x = int(center_x - w / 2)
     y = int(center_y - h / 2)
     
-    label_index = np.argmax(score_list)
-    if score_list[label_index] > 0:
-        draw.rectangle([(x, y), (x + w, y + h)], outline="red", width=2)
-        # print(score_list[label_index], label_index, label_list[label_index])
+    
+    confidence = confidence_list[extracted_index]
+    draw.rectangle([(x, y), (x + w, y + h)], outline=color, width=2)
+    
+
 
 image.save("./result_20260612.jpg")
 print(f"결과 이미지 저장 완료")
