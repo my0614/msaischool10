@@ -8,6 +8,9 @@
 *.wav
 *.png
 
+# large model files
+*.weights
+
 # python
 __pycache__/
 *.pyc

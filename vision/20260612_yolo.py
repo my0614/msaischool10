@@ -4,6 +4,13 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import platform
 import gradio as gr
+import requests
+import base64
+import datetime
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 weights_path = "./yolo/yolov3.weights"
 coco_path = "./yolo/coco.names"
@@ -100,8 +107,8 @@ for extracted_index in extracted_index_list:
         font=font,
     )
 
-image.save("./result_20260612.jpg")
-print(f"결과 이미지 저장 완료")
+# image.save("./result_20260612.jpg")
+# print(f"결과 이미지 저장 완료")
 
 def detect_objects(image_array):
 
@@ -170,6 +177,52 @@ def detect_objects(image_array):
 
     return image
 
+import requests
+
+
+def request_gpt(image_array):
+    endpoint = os.environ["AZURE_OPENAI_ENDPOINT"]
+    headers = {
+        "Authorization": "Bearer {}".format(os.environ["AZURE_OPENAI_API_KEY"])
+    }
+    
+    success, encoded_image = cv2.imencode(".jpg", image_array)
+
+    if not success:
+        raise ValueError("이미지 인코딩에 실패했습니다.")
+
+    base64_string = base64.b64encode(encoded_image).decode("utf-8")
+
+    body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64,{}".format(base64_string)
+                        },
+                    },
+                    {"type": "text", "text": "이미지 분석"},
+                ],
+            }
+        ],
+        "max_completion_tokens": 800,
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
+    }
+
+    response = requests.post(endpoint, headers=headers, json=body)
+    if response.status_code != 200:
+        print(f"Error: {response.status_code}")
+        return None
+
+    response_json = response.json()
+    content = response_json["choices"][0]["message"]["content"]
+    return content
 
 with gr.Blocks() as demo:
 
@@ -180,12 +233,18 @@ with gr.Blocks() as demo:
 
     def click_capture(image):
         return image
-
-
-    def change_capture(image):
-        print("CHANGE_CAPTURE")
-        pass
-
+    
+    def change_capture(image_array, histories):
+        content = request_gpt(image_array)
+        label_text = datetime.datetime.now().strftime("%Y년%m월%d일 %H:%M:%S")
+        histories.append(
+            {
+                "role": "user",
+                "content": gr.Image(label=label_text, value=image_array),
+            }
+        )
+        histories.append({"role": "assistant", "content": content})
+        return histories
 
     with gr.Row():
         stream_image = gr.Image(
@@ -204,6 +263,6 @@ with gr.Blocks() as demo:
     stream_image.stream(stream_webcam, inputs=[stream_image], outputs=[result_image])
     capture_button.click(click_capture, inputs=[result_image], outputs=[capture_image])
 
-    capture_image.change(change_capture, inputs=[capture_image], outputs=[])
+    capture_image.change(change_capture, inputs=[capture_image, chatbot], outputs=[chatbot])
 
 demo.launch()
