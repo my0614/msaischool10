@@ -10,11 +10,13 @@
 
 # large model files
 *.weights
+*.pt
 
 # python
 __pycache__/
 *.pyc
 venv/
+venv311/
 *.db
 
 # node
