@@ -15,6 +15,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bank"))
 from embeddings import LocalEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import AzureChatOpenAI
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
@@ -79,47 +82,49 @@ def request_stt(audio_path):
 
 
 # ── Azure OpenAI GPT ───────────────────────────────────────
-def request_gpt(text):
-    # 과거 편지 검색 (RAG)
-    past_letters = search_past_letters(text, k=3)
-    past_context = ""
-    if past_letters:
-        past_context = "\n\n[과거 기록 - 아래 내용을 참고해 더 개인화된 편지를 써주세요]\n"
-        past_context += "\n---\n".join(past_letters)
-
-    endpoint = "https://fimtrus-foundry10.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview"
-    headers = {
-        "Authorization": f"Bearer {os.getenv('AZURE_GPT_KEY')}",
-        "Content-Type": "application/json",
-    }
-    prompt = f"""사용자가 오늘 하루의 감정과 생각을 말했습니다:
+PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
+    ("system", "당신은 사용자의 감정 일기를 분석해 미래의 자신에게 보내는 따뜻한 편지를 작성하는 AI입니다."),
+    ("human", """오늘 하루의 감정과 생각:
 "{text}"
 {past_context}
-
-다음 JSON 형식으로 정확히 응답해주세요 (다른 텍스트 없이 JSON만):
+다음 JSON 형식으로 정확히 응답해주세요 (JSON만, 다른 텍스트 없이):
 {{
   "emotions": ["😊 기쁨", "🤔 고민"],
   "keywords": ["성장", "도전", "희망"],
-  "letter": "미래의 나에게,\\n\\n[따뜻하고 진심 어린 200~300자 편지. 과거 기록이 있다면 그 내용을 자연스럽게 연결해주세요]\\n\\n"
+  "letter": "미래의 나에게,\\n\\n[따뜻하고 진심 어린 200~300자 편지. 과거 기록이 있다면 자연스럽게 연결해주세요]\\n\\n과거의 나로부터"
 }}
-
 emotions: 오늘 감정 1~3가지 (이모지 포함)
 keywords: 핵심 키워드 3~5가지
-letter: 미래의 나에게 보내는 편지 (200~300자, 한국어)"""
+letter: 미래의 나에게 보내는 편지 (200~300자, 한국어)"""),
+])
 
-    body = {
-        "messages": [{"role": "user", "content": prompt}],
-        "max_completion_tokens": 1000,
-        "temperature": 0.8,
-    }
-    resp = requests.post(endpoint, headers=headers, json=body)
-    if resp.status_code != 200:
-        print(f"GPT 오류: {resp.status_code} {resp.text}")
-        return None
 
-    content = resp.json()["choices"][0]["message"]["content"]
+def get_llm():
+    return AzureChatOpenAI(
+        azure_deployment="gpt-4o",
+        azure_endpoint="https://fimtrus-foundry10.cognitiveservices.azure.com/",
+        api_key=os.getenv("AZURE_GPT_KEY"),
+        api_version="2025-01-01-preview",
+        temperature=0.8,
+        max_tokens=1000,
+    )
+
+
+def request_gpt(text):
+    # RAG: 과거 편지 검색
+    past_docs = get_vectorstore().as_retriever(search_kwargs={"k": 3}).invoke(text)
+    past_context = ""
+    if past_docs:
+        past_context = "\n[과거 기록 - 아래 내용을 참고해 더 개인화된 편지를 써주세요]\n"
+        past_context += "\n---\n".join(d.page_content for d in past_docs)
+
+    # LangChain LCEL 체인: 프롬프트 → LLM → 문자열 파싱
+    chain = PROMPT_TEMPLATE | get_llm() | StrOutputParser()
+
     try:
-        result = json.loads(content.strip().removeprefix("```json").removesuffix("```").strip())
+        content = chain.invoke({"text": text, "past_context": past_context})
+        content = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        result = json.loads(content)
         # 생성된 편지를 벡터 DB에 저장 (다음 번 RAG에 활용)
         save_letter_to_vectorstore(
             text,
@@ -129,7 +134,7 @@ letter: 미래의 나에게 보내는 편지 (200~300자, 한국어)"""
         )
         return result
     except Exception as e:
-        print(f"JSON 파싱 오류: {e}\n{content}")
+        print(f"GPT 오류: {e}")
         return None
 
 
