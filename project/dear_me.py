@@ -1,4 +1,5 @@
 import os
+import sys
 import io
 import json
 import tempfile
@@ -10,7 +11,45 @@ from dotenv import load_dotenv
 from pydub import AudioSegment
 import gradio as gr
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bank"))
+from embeddings import LocalEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+# ── RAG: 과거 편지 벡터 DB ──────────────────────────────────
+DIARY_CHROMA_DIR = os.path.join(os.path.dirname(__file__), "diary_chroma_db")
+_vectorstore = None
+
+def get_vectorstore():
+    global _vectorstore
+    if _vectorstore is None:
+        _vectorstore = Chroma(
+            persist_directory=DIARY_CHROMA_DIR,
+            embedding_function=LocalEmbeddings(),
+        )
+    return _vectorstore
+
+def search_past_letters(text: str, k: int = 3) -> list[str]:
+    try:
+        docs = get_vectorstore().similarity_search(text, k=k)
+        return [doc.page_content for doc in docs]
+    except Exception:
+        return []
+
+def save_letter_to_vectorstore(stt_text: str, letter: str, emotions: list, keywords: list):
+    date_str = datetime.now().strftime("%Y년 %m월 %d일")
+    content = (
+        f"날짜: {date_str}\n"
+        f"감정: {', '.join(emotions)}\n"
+        f"키워드: {', '.join(keywords)}\n"
+        f"오늘의 기록: {stt_text}\n"
+        f"편지:\n{letter}"
+    )
+    get_vectorstore().add_documents([
+        Document(page_content=content, metadata={"date": date_str})
+    ])
 AudioSegment.converter = "/Users/kimminyoung/opt/anaconda3/bin/ffmpeg"
 
 FONT_PATH = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
@@ -41,6 +80,13 @@ def request_stt(audio_path):
 
 # ── Azure OpenAI GPT ───────────────────────────────────────
 def request_gpt(text):
+    # 과거 편지 검색 (RAG)
+    past_letters = search_past_letters(text, k=3)
+    past_context = ""
+    if past_letters:
+        past_context = "\n\n[과거 기록 - 아래 내용을 참고해 더 개인화된 편지를 써주세요]\n"
+        past_context += "\n---\n".join(past_letters)
+
     endpoint = "https://fimtrus-foundry10.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview"
     headers = {
         "Authorization": f"Bearer {os.getenv('AZURE_GPT_KEY')}",
@@ -48,12 +94,13 @@ def request_gpt(text):
     }
     prompt = f"""사용자가 오늘 하루의 감정과 생각을 말했습니다:
 "{text}"
+{past_context}
 
 다음 JSON 형식으로 정확히 응답해주세요 (다른 텍스트 없이 JSON만):
 {{
   "emotions": ["😊 기쁨", "🤔 고민"],
   "keywords": ["성장", "도전", "희망"],
-  "letter": "미래의 나에게,\\n\\n[따뜻하고 진심 어린 200~300자 편지. 오늘의 감정을 담아 미래의 자신에게 위로와 응원을 전하는 내용]\\n\\n"
+  "letter": "미래의 나에게,\\n\\n[따뜻하고 진심 어린 200~300자 편지. 과거 기록이 있다면 그 내용을 자연스럽게 연결해주세요]\\n\\n"
 }}
 
 emotions: 오늘 감정 1~3가지 (이모지 포함)
@@ -72,8 +119,15 @@ letter: 미래의 나에게 보내는 편지 (200~300자, 한국어)"""
 
     content = resp.json()["choices"][0]["message"]["content"]
     try:
-        content = content.strip().removeprefix("```json").removesuffix("```").strip()
-        return json.loads(content)
+        result = json.loads(content.strip().removeprefix("```json").removesuffix("```").strip())
+        # 생성된 편지를 벡터 DB에 저장 (다음 번 RAG에 활용)
+        save_letter_to_vectorstore(
+            text,
+            result.get("letter", ""),
+            result.get("emotions", []),
+            result.get("keywords", []),
+        )
+        return result
     except Exception as e:
         print(f"JSON 파싱 오류: {e}\n{content}")
         return None
