@@ -18,6 +18,11 @@ __pycache__/
 venv/
 venv311/
 *.db
+*.sqlite3
+
+# generated vector DB
+**/diary_chroma_db/
+**/chroma_db/
 
 # node
 node_modules/
