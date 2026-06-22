@@ -110,6 +110,33 @@ export default function App() {
     <div style={s.page}>
       <div style={s.glow1} /><div style={s.glow2} />
 
+      {/* 우측 상단 고정 유저바 */}
+      {kakaoStateKey && (
+        <div style={s.userBar}>
+          {nickname && <span style={s.userBadge}>💬 {nickname}</span>}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => setShowCalendar(true)}
+            style={s.calendarBtn}
+            title="일기 캘린더"
+          >
+            <CalendarDays size={22} />
+          </motion.button>
+          <button
+            onClick={() => {
+              localStorage.removeItem('kakao_state')
+              localStorage.removeItem('kakao_nickname')
+              setKakaoStateKey(null)
+              setNickname('')
+            }}
+            style={s.logoutBtn}
+          >
+            로그아웃
+          </button>
+        </div>
+      )}
+
       <div style={s.wrap}>
         {/* Header */}
         <motion.header
@@ -117,31 +144,6 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           style={s.header}
         >
-          {nickname && (
-            <div style={s.userBar}>
-              <span style={s.userBadge}>💬 {nickname}</span>
-              <motion.button
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.94 }}
-                onClick={() => setShowCalendar(true)}
-                style={s.calendarBtn}
-                title="일기 캘린더"
-              >
-                <CalendarDays size={16} />
-              </motion.button>
-              <button
-                onClick={() => {
-                  localStorage.removeItem('kakao_state')
-                  localStorage.removeItem('kakao_nickname')
-                  setKakaoStateKey(null)
-                  setNickname('')
-                }}
-                style={s.logoutBtn}
-              >
-                로그아웃
-              </button>
-            </div>
-          )}
           <span style={s.badge}>✦ Time Capsule Letter ✦</span>
           <h1 style={s.title}>💌 Dear Me,</h1>
           <p style={s.sub}>오늘의 나를 기록하고, 미래의 나에게 편지를 보내세요</p>
@@ -380,10 +382,10 @@ const s = {
     position: 'relative', zIndex: 1,
   },
   header: { textAlign: 'center', marginBottom: 40 },
-  userBar: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 16 },
-  userBadge: { background: 'rgba(254,229,0,0.12)', border: '1px solid rgba(254,229,0,0.25)', borderRadius: 20, padding: '5px 14px', fontSize: 13, color: '#f5e080', fontFamily: "'Noto Sans KR',sans-serif" },
-  calendarBtn: { background: 'rgba(196,168,130,0.1)', border: '1px solid rgba(196,168,130,0.3)', borderRadius: 10, padding: '6px 10px', color: '#c4a882', cursor: 'pointer', display: 'flex', alignItems: 'center' },
-  logoutBtn: { background: 'transparent', border: '1px solid rgba(196,168,130,0.2)', borderRadius: 10, padding: '5px 12px', color: '#6a5a52', fontSize: 12, cursor: 'pointer', fontFamily: "'Noto Sans KR',sans-serif" },
+  userBar: { position: 'fixed', top: 20, right: 24, zIndex: 100, display: 'flex', alignItems: 'center', gap: 10 },
+  userBadge: { background: 'rgba(254,229,0,0.12)', border: '1px solid rgba(254,229,0,0.25)', borderRadius: 20, padding: '6px 14px', fontSize: 13, color: '#f5e080', fontFamily: "'Noto Sans KR',sans-serif" },
+  calendarBtn: { background: 'rgba(196,168,130,0.12)', border: '1px solid rgba(196,168,130,0.35)', borderRadius: 12, padding: '8px 12px', color: '#c4a882', cursor: 'pointer', display: 'flex', alignItems: 'center' },
+  logoutBtn: { background: 'transparent', border: '1px solid rgba(196,168,130,0.2)', borderRadius: 10, padding: '6px 12px', color: '#6a5a52', fontSize: 12, cursor: 'pointer', fontFamily: "'Noto Sans KR',sans-serif" },
   badge: { display: 'inline-block', fontSize: 11, letterSpacing: 3, color: '#8a7065', textTransform: 'uppercase', marginBottom: 18 },
   title: { fontFamily: "'Noto Serif KR',serif", fontSize: 54, fontWeight: 300, color: '#f5ebe0', letterSpacing: -1, marginBottom: 14, lineHeight: 1.1 },
   sub: { color: '#6a5a52', fontSize: 16, lineHeight: 1.7 },
