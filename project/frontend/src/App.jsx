@@ -7,6 +7,7 @@ import ScheduleSection from './ScheduleSection'
 import KakaoCallback from './KakaoCallback'
 import CardViewer from './CardViewer'
 import Chatbot from './Chatbot'
+import LoginPage from './LoginPage'
 import './index.css'
 
 const API = `http://${window.location.hostname}:8000`
@@ -22,6 +23,8 @@ export default function App() {
   if (cardMatch) {
     return <CardViewer cardId={cardMatch[1]} />
   }
+
+  const [kakaoStateKey, setKakaoStateKey] = useState(() => localStorage.getItem('kakao_state'))
   const [step, setStep] = useState('idle')
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -31,6 +34,11 @@ export default function App() {
   const audioChunks = useRef([])
   const audioBlob = useRef(null)
   const cardRef = useRef(null)
+
+  // 로그인 게이트 — 모든 hook 호출 이후에 위치
+  if (!kakaoStateKey) {
+    return <LoginPage onLogin={(key) => setKakaoStateKey(key)} />
+  }
 
   async function startRecording() {
     setError(null)
@@ -248,7 +256,7 @@ export default function App() {
               </motion.div>
 
               {/* 카카오 예약 발송 */}
-              <ScheduleSection result={result} />
+              <ScheduleSection result={result} kakaoStateKey={kakaoStateKey} />
 
               <div style={{ textAlign: 'center', marginTop: 20 }}>
                 <motion.button

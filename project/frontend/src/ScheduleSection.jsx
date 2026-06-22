@@ -36,11 +36,11 @@ function formatDate(d) {
   return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
-export default function ScheduleSection({ result }) {
+export default function ScheduleSection({ result, kakaoStateKey }) {
   const [dateOpt, setDateOpt]               = useState(null)
   const [channel, setChannel]               = useState(null)
-  const [authStep, setAuthStep]             = useState('idle')   // kakao: idle | waiting | done
-  const [stateKey, setStateKey]             = useState(null)
+  const [authStep, setAuthStep]             = useState(kakaoStateKey ? 'done' : 'idle')
+  const [stateKey, setStateKey]             = useState(kakaoStateKey ?? null)
   const [discordWebhook, setDiscordWebhook] = useState('')
   const [targetEmail, setTargetEmail]       = useState('')
   const [done, setDone]                     = useState(false)
