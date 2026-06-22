@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background-color: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 헤더 */
+    header {
+      background-color: #2c3e50;
+      color: white;
+      padding: 20px;
+    }
+
+    header h1 {
+      margin-bottom: 5px;
+    }
+
+    header p {
+      color: #bdc3c7;
+    }
+
+    /* 본문 레이아웃 */
+    .layout {
+      display: flex;
+      flex: 1;
+    }
+
+    /* 사이드바 */
+    .sidebar {
+      flex: 0 0 200px;
+      background-color: #ecf0f1;
+      padding: 20px;
+    }
+
+    .sidebar h3 {
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+
+    .sidebar ul {
+      list-style: none;
+      margin-bottom: 20px;
+    }
+
+    .sidebar ul li {
+      padding: 6px 0;
+      color: #7f8c8d;
+    }
+
+    /* 메인 */
+    .main {
+      flex: 1;
+      padding: 20px;
+    }
+
+    .main h2 {
+      color: #2c3e50;
+      margin-bottom: 20px;
+    }
+
+    /* 상품 목록 */
+    .product-list {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    /* 상품 카드 */
+    .card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+      flex: 0 0 200px;
+    }
+
+    .card-image {
+      height: 150px;
+      overflow: hidden;
+    }
+
+    .card-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .card-content {
+      padding: 15px;
+    }
+
+    .card-content h4 {
+      color: #2c3e50;
+      margin-bottom: 6px;
+    }
+
+    .card-content p {
+      color: #7f8c8d;
+    }
+
+    /* 푸터 */
+    footer {
+      background-color: #2c3e50;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>MY SHOP</h1>
+    <p>좋은 상품을 합리적인 가격에</p>
+  </header>
+
+  <div class="layout">
+
+    <aside class="sidebar">
+      <h3>카테고리</h3>
+      <ul>
+        <li>전체</li>
+        <li>상의</li>
+        <li>하의</li>
+        <li>아우터</li>
+        <li>신발</li>
+      </ul>
+
+      <h3>가격대</h3>
+      <ul>
+        <li>1만원 이하</li>
+        <li>1~3만원</li>
+        <li>3~5만원</li>
+        <li>5만원 이상</li>
+      </ul>
+    </aside>
+
+    <main class="main">
+      <h2>상품 목록</h2>
+      <div class="product-list">
+
+        <div class="card">
+          <div class="card-image">
+            <img src="https://images.unsplash.com/photo-1441984904996-e0b6ba687e04?w=400&h=300&fit=crop" alt="의류 부티크">
+          </div>
+          <div class="card-content">
+            <h4>캐주얼 재킷</h4>
+            <p>39,000원</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-image">
+            <img src="https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?w=400&h=300&fit=crop" alt="여성 의류">
+          </div>
+          <div class="card-content">
+            <h4>봄 원피스</h4>
+            <p>59,000원</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-image">
+            <img src="https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=400&h=300&fit=crop" alt="상의">
+          </div>
+          <div class="card-content">
+            <h4>린넨 셔츠</h4>
+            <p>79,000원</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-image">
+            <img src="https://images.unsplash.com/photo-1532453288672-3a27e9be9efd?w=400&h=300&fit=crop" alt="셔츠">
+          </div>
+          <div class="card-content">
+            <h4>스트라이프 셔츠</h4>
+            <p>29,000원</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-image">
+            <img src="https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&h=300&fit=crop" alt="패션">
+          </div>
+          <div class="card-content">
+            <h4>데일리 코디셋</h4>
+            <p>89,000원</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-image">
+            <img src="https://images.unsplash.com/photo-1562157873-818bc0726f68?w=400&h=300&fit=crop" alt="셔츠">
+          </div>
+          <div class="card-content">
+            <h4>베이직 티셔츠</h4>
+            <p>49,000원</p>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+  </div>
+
+  <footer>
+    <p>© 2024 MY SHOP. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>
