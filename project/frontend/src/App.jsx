@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Download, RefreshCw, X } from 'lucide-react'
+import { Mic, MicOff, Download, RefreshCw, X, CalendarDays } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import Card from './Card'
 import ScheduleSection from './ScheduleSection'
@@ -8,6 +8,7 @@ import KakaoCallback from './KakaoCallback'
 import CardViewer from './CardViewer'
 import Chatbot from './Chatbot'
 import LoginPage from './LoginPage'
+import DiaryCalendar from './DiaryCalendar'
 import './index.css'
 
 const API = `http://${window.location.hostname}:8000`
@@ -26,6 +27,7 @@ export default function App() {
 
   const [kakaoStateKey, setKakaoStateKey] = useState(() => localStorage.getItem('kakao_state'))
   const [nickname, setNickname] = useState(() => localStorage.getItem('kakao_nickname') || '')
+  const [showCalendar, setShowCalendar] = useState(false)
   const [step, setStep] = useState('idle')
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -118,6 +120,15 @@ export default function App() {
           {nickname && (
             <div style={s.userBar}>
               <span style={s.userBadge}>💬 {nickname}</span>
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.94 }}
+                onClick={() => setShowCalendar(true)}
+                style={s.calendarBtn}
+                title="일기 캘린더"
+              >
+                <CalendarDays size={16} />
+              </motion.button>
               <button
                 onClick={() => {
                   localStorage.removeItem('kakao_state')
@@ -333,6 +344,15 @@ export default function App() {
       </AnimatePresence>
 
       <Chatbot />
+
+      <AnimatePresence>
+        {showCalendar && (
+          <DiaryCalendar
+            stateKey={kakaoStateKey}
+            onClose={() => setShowCalendar(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -362,6 +382,7 @@ const s = {
   header: { textAlign: 'center', marginBottom: 40 },
   userBar: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 16 },
   userBadge: { background: 'rgba(254,229,0,0.12)', border: '1px solid rgba(254,229,0,0.25)', borderRadius: 20, padding: '5px 14px', fontSize: 13, color: '#f5e080', fontFamily: "'Noto Sans KR',sans-serif" },
+  calendarBtn: { background: 'rgba(196,168,130,0.1)', border: '1px solid rgba(196,168,130,0.3)', borderRadius: 10, padding: '6px 10px', color: '#c4a882', cursor: 'pointer', display: 'flex', alignItems: 'center' },
   logoutBtn: { background: 'transparent', border: '1px solid rgba(196,168,130,0.2)', borderRadius: 10, padding: '5px 12px', color: '#6a5a52', fontSize: 12, cursor: 'pointer', fontFamily: "'Noto Sans KR',sans-serif" },
   badge: { display: 'inline-block', fontSize: 11, letterSpacing: 3, color: '#8a7065', textTransform: 'uppercase', marginBottom: 18 },
   title: { fontFamily: "'Noto Serif KR',serif", fontSize: 54, fontWeight: 300, color: '#f5ebe0', letterSpacing: -1, marginBottom: 14, lineHeight: 1.1 },

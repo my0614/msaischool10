@@ -753,6 +753,54 @@ def get_history(state: str):
     }
 
 
+@app.get("/api/calendar")
+def get_calendar(state: str):
+    """유저의 일기 작성 날짜 목록 (YYYY-MM-DD, 건수 포함)"""
+    info = oauth_states.get(state)
+    if not info or not info.get("kakao_id"):
+        return {"error": "인증 정보가 없습니다."}
+    kakao_id = info["kakao_id"]
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT substr(created_at, 1, 10) as iso_date, COUNT(*) as cnt "
+        "FROM cards WHERE kakao_id=? "
+        "GROUP BY iso_date ORDER BY iso_date DESC",
+        (kakao_id,),
+    ).fetchall()
+    conn.close()
+    return {"dates": [{"date": r[0], "count": r[1]} for r in rows]}
+
+
+@app.get("/api/diary/{iso_date}")
+def get_diary_by_date(iso_date: str, state: str):
+    """특정 날짜(YYYY-MM-DD)의 일기 목록"""
+    info = oauth_states.get(state)
+    if not info or not info.get("kakao_id"):
+        return {"error": "인증 정보가 없습니다."}
+    kakao_id = info["kakao_id"]
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT id, letter, emotions, keywords, date, created_at "
+        "FROM cards WHERE kakao_id=? AND substr(created_at, 1, 10)=? "
+        "ORDER BY created_at",
+        (kakao_id, iso_date),
+    ).fetchall()
+    conn.close()
+    return {
+        "entries": [
+            {
+                "id":         r[0],
+                "letter":     r[1],
+                "emotions":   json.loads(r[2]),
+                "keywords":   json.loads(r[3]),
+                "date":       r[4],
+                "created_at": r[5],
+            }
+            for r in rows
+        ]
+    }
+
+
 # 프론트엔드 콜백(5173)에서 code 받아서 토큰 교환
 @app.get("/api/kakao/exchange")
 def kakao_exchange(code: str, state: str):
