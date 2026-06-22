@@ -25,6 +25,7 @@ export default function App() {
   }
 
   const [kakaoStateKey, setKakaoStateKey] = useState(() => localStorage.getItem('kakao_state'))
+  const [nickname, setNickname] = useState(() => localStorage.getItem('kakao_nickname') || '')
   const [step, setStep] = useState('idle')
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -37,7 +38,10 @@ export default function App() {
 
   // 로그인 게이트 — 모든 hook 호출 이후에 위치
   if (!kakaoStateKey) {
-    return <LoginPage onLogin={(key) => setKakaoStateKey(key)} />
+    return <LoginPage onLogin={(key, nick) => {
+      setKakaoStateKey(key)
+      if (nick) { setNickname(nick); localStorage.setItem('kakao_nickname', nick) }
+    }} />
   }
 
   async function startRecording() {
@@ -67,6 +71,7 @@ export default function App() {
     try {
       const form = new FormData()
       form.append('audio', audioBlob.current, 'recording.wav')
+      form.append('state', kakaoStateKey || '')
       const res = await fetch(`${API}/api/process`, { method: 'POST', body: form })
       const data = await res.json()
       if (data.error) { setError(data.error); setStep('idle'); return }
@@ -110,6 +115,22 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           style={s.header}
         >
+          {nickname && (
+            <div style={s.userBar}>
+              <span style={s.userBadge}>💬 {nickname}</span>
+              <button
+                onClick={() => {
+                  localStorage.removeItem('kakao_state')
+                  localStorage.removeItem('kakao_nickname')
+                  setKakaoStateKey(null)
+                  setNickname('')
+                }}
+                style={s.logoutBtn}
+              >
+                로그아웃
+              </button>
+            </div>
+          )}
           <span style={s.badge}>✦ Time Capsule Letter ✦</span>
           <h1 style={s.title}>💌 Dear Me,</h1>
           <p style={s.sub}>오늘의 나를 기록하고, 미래의 나에게 편지를 보내세요</p>
@@ -339,6 +360,9 @@ const s = {
     position: 'relative', zIndex: 1,
   },
   header: { textAlign: 'center', marginBottom: 40 },
+  userBar: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 16 },
+  userBadge: { background: 'rgba(254,229,0,0.12)', border: '1px solid rgba(254,229,0,0.25)', borderRadius: 20, padding: '5px 14px', fontSize: 13, color: '#f5e080', fontFamily: "'Noto Sans KR',sans-serif" },
+  logoutBtn: { background: 'transparent', border: '1px solid rgba(196,168,130,0.2)', borderRadius: 10, padding: '5px 12px', color: '#6a5a52', fontSize: 12, cursor: 'pointer', fontFamily: "'Noto Sans KR',sans-serif" },
   badge: { display: 'inline-block', fontSize: 11, letterSpacing: 3, color: '#8a7065', textTransform: 'uppercase', marginBottom: 18 },
   title: { fontFamily: "'Noto Serif KR',serif", fontSize: 54, fontWeight: 300, color: '#f5ebe0', letterSpacing: -1, marginBottom: 14, lineHeight: 1.1 },
   sub: { color: '#6a5a52', fontSize: 16, lineHeight: 1.7 },

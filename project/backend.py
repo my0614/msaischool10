@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 import threading
 from dotenv import load_dotenv
 from pydub import AudioSegment
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from typing import Optional, List, Dict, Any
@@ -58,7 +58,7 @@ def search_past_letters(text: str, k: int = 3) -> list[str]:
     except Exception:
         return []
 
-def save_letter_to_vectorstore(stt_text: str, letter: str, emotions: list, keywords: list):
+def save_letter_to_vectorstore(stt_text: str, letter: str, emotions: list, keywords: list, kakao_id: str = "anonymous"):
     date_str = datetime.now().strftime("%Y년 %m월 %d일")
     content = (
         f"날짜: {date_str}\n"
@@ -68,7 +68,7 @@ def save_letter_to_vectorstore(stt_text: str, letter: str, emotions: list, keywo
         f"편지:\n{letter}"
     )
     get_vectorstore().add_documents([
-        Document(page_content=content, metadata={"date": date_str})
+        Document(page_content=content, metadata={"date": date_str, "kakao_id": kakao_id})
     ])
 
 
@@ -77,7 +77,7 @@ KAKAO_SECRET  = os.getenv("KAKAO_CLIENT_SECRET")
 REDIRECT_URI  = "http://localhost:5173/kakao/callback"
 DB_PATH       = os.path.join(os.path.dirname(__file__), "schedules.db")
 
-# 카카오 OAuth 상태 임시 저장 (메모리)
+# 카카오 OAuth 상태 임시 저장 (메모리) — kakao_id, nickname 포함
 oauth_states: dict = {}
 
 # ── DB 초기화 ───────────────────────────────────────────────
@@ -86,18 +86,27 @@ FRONTEND_URL = "http://192.168.200.181:5173"
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            kakao_id   TEXT PRIMARY KEY,
+            nickname   TEXT,
+            created_at TEXT
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS cards (
-            id       TEXT PRIMARY KEY,
-            letter   TEXT,
-            emotions TEXT,
-            keywords TEXT,
-            date     TEXT,
+            id         TEXT PRIMARY KEY,
+            kakao_id   TEXT,
+            letter     TEXT,
+            emotions   TEXT,
+            keywords   TEXT,
+            date       TEXT,
             created_at TEXT
         )
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS schedules (
             id              TEXT PRIMARY KEY,
+            kakao_id        TEXT,
             letter          TEXT,
             emotions        TEXT,
             keywords        TEXT,
@@ -114,11 +123,42 @@ def init_db():
         ("send_method",     "TEXT DEFAULT 'kakao'"),
         ("discord_webhook", "TEXT"),
         ("target_email",    "TEXT"),
+        ("kakao_id",        "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE schedules ADD COLUMN {col} {typ}")
         except sqlite3.OperationalError:
             pass
+    for col, typ in [("kakao_id", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE cards ADD COLUMN {col} {typ}")
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    conn.close()
+
+
+# ── 카카오 유저 프로필 조회 ──────────────────────────────────
+def fetch_kakao_profile(access_token: str) -> dict:
+    resp = requests.get(
+        "https://kapi.kakao.com/v2/user/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    if resp.status_code != 200:
+        return {}
+    data = resp.json()
+    kakao_id = str(data.get("id", ""))
+    nickname = data.get("kakao_account", {}).get("profile", {}).get("nickname", "")
+    return {"kakao_id": kakao_id, "nickname": nickname}
+
+
+def upsert_user(kakao_id: str, nickname: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO users (kakao_id, nickname, created_at) VALUES (?,?,?) "
+        "ON CONFLICT(kakao_id) DO UPDATE SET nickname=excluded.nickname",
+        (kakao_id, nickname, datetime.now().isoformat()),
+    )
     conn.commit()
     conn.close()
 
@@ -430,9 +470,14 @@ def get_llm():
     )
 
 
-def request_gpt(text: str) -> Optional[dict]:
-    # RAG: 과거 편지 검색
-    past_docs = get_vectorstore().as_retriever(search_kwargs={"k": 3}).invoke(text)
+def request_gpt(text: str, kakao_id: str = "anonymous") -> Optional[dict]:
+    # RAG: 해당 유저의 과거 편지만 검색
+    try:
+        search_filter = {"kakao_id": kakao_id} if kakao_id != "anonymous" else None
+        past_docs = get_vectorstore().similarity_search(text, k=3, filter=search_filter)
+    except Exception:
+        past_docs = []
+
     past_context = ""
     if past_docs:
         past_context = "\n[과거 기록 - 아래 내용을 참고해 더 개인화된 편지를 써주세요]\n"
@@ -445,12 +490,13 @@ def request_gpt(text: str) -> Optional[dict]:
         content = chain.invoke({"text": text, "past_context": past_context})
         content = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         result = json.loads(content)
-        # 생성된 편지를 벡터 DB에 저장 (다음 번 RAG에 활용)
+        # 생성된 편지를 해당 유저 ID와 함께 저장
         save_letter_to_vectorstore(
             text,
             result.get("letter", ""),
             result.get("emotions", []),
             result.get("keywords", []),
+            kakao_id=kakao_id,
         )
         return result
     except Exception as e:
@@ -486,14 +532,16 @@ def create_qr_base64(text: str) -> str:
 
 # ── API: 메인 처리 ───────────────────────────────────────────
 @app.post("/api/process")
-async def process(audio: UploadFile = File(...)):
+async def process(audio: UploadFile = File(...), state: str = Form(default="")):
+    kakao_id = oauth_states.get(state, {}).get("kakao_id", "anonymous") if state else "anonymous"
+
     audio_bytes = await audio.read()
 
     stt_text = request_stt(audio_bytes)
     if not stt_text:
         return {"error": "음성 인식에 실패했습니다."}
 
-    result = request_gpt(stt_text)
+    result = request_gpt(stt_text, kakao_id=kakao_id)
     if not result:
         return {"error": "GPT 분석에 실패했습니다.", "stt_text": stt_text}
 
@@ -505,12 +553,12 @@ async def process(audio: UploadFile = File(...)):
     tts_b64   = base64.b64encode(tts_bytes).decode() if tts_bytes else None
     date_str  = datetime.now().strftime("%Y년 %m월 %d일")
 
-    # 카드 DB 저장 → QR에 URL 삽입
+    # 카드 DB 저장 (kakao_id 포함)
     card_id = str(uuid.uuid4())
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        "INSERT INTO cards (id, letter, emotions, keywords, date, created_at) VALUES (?,?,?,?,?,?)",
-        (card_id, letter,
+        "INSERT INTO cards (id, kakao_id, letter, emotions, keywords, date, created_at) VALUES (?,?,?,?,?,?,?)",
+        (card_id, kakao_id, letter,
          json.dumps(emotions, ensure_ascii=False),
          json.dumps(keywords, ensure_ascii=False),
          date_str, datetime.now().isoformat())
@@ -599,12 +647,19 @@ def kakao_callback(code: str = None, state: str = None, error: str = None, error
     })
 
     if resp.status_code == 200:
-        tokens = resp.json()
+        tokens  = resp.json()
+        profile = fetch_kakao_profile(tokens["access_token"])
+        kakao_id = profile.get("kakao_id", "")
+        nickname = profile.get("nickname", "")
+        if kakao_id:
+            upsert_user(kakao_id, nickname)
         oauth_states[state] = {
             "access_token":  tokens["access_token"],
             "refresh_token": tokens["refresh_token"],
+            "kakao_id":      kakao_id,
+            "nickname":      nickname,
         }
-        print(f"[Kakao] 토큰 발급 성공: state={state}")
+        print(f"[Kakao] 토큰 발급 성공: state={state} kakao_id={kakao_id} nickname={nickname}")
         return HTMLResponse("""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8"><title>로그인 완료</title>
 <style>
@@ -659,6 +714,45 @@ def kakao_status(state: str):
     return {"authenticated": state in oauth_states}
 
 
+@app.get("/api/me")
+def get_me(state: str):
+    info = oauth_states.get(state)
+    if not info:
+        return {"error": "인증 정보가 없습니다."}
+    return {
+        "kakao_id": info.get("kakao_id", ""),
+        "nickname": info.get("nickname", ""),
+    }
+
+
+@app.get("/api/history")
+def get_history(state: str):
+    info = oauth_states.get(state)
+    if not info or not info.get("kakao_id"):
+        return {"error": "인증 정보가 없습니다."}
+    kakao_id = info["kakao_id"]
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT id, letter, emotions, keywords, date, created_at FROM cards "
+        "WHERE kakao_id=? ORDER BY created_at DESC LIMIT 50",
+        (kakao_id,),
+    ).fetchall()
+    conn.close()
+    return {
+        "cards": [
+            {
+                "id":         r[0],
+                "letter":     r[1],
+                "emotions":   json.loads(r[2]),
+                "keywords":   json.loads(r[3]),
+                "date":       r[4],
+                "created_at": r[5],
+            }
+            for r in rows
+        ]
+    }
+
+
 # 프론트엔드 콜백(5173)에서 code 받아서 토큰 교환
 @app.get("/api/kakao/exchange")
 def kakao_exchange(code: str, state: str):
@@ -670,12 +764,19 @@ def kakao_exchange(code: str, state: str):
         "code":          code,
     })
     if resp.status_code == 200:
-        tokens = resp.json()
+        tokens   = resp.json()
+        profile  = fetch_kakao_profile(tokens["access_token"])
+        kakao_id = profile.get("kakao_id", "")
+        nickname = profile.get("nickname", "")
+        if kakao_id:
+            upsert_user(kakao_id, nickname)
         oauth_states[state] = {
             "access_token":  tokens["access_token"],
             "refresh_token": tokens["refresh_token"],
+            "kakao_id":      kakao_id,
+            "nickname":      nickname,
         }
-        print(f"[Kakao] 토큰 발급 성공: state={state}")
+        print(f"[Kakao] 토큰 발급 성공: state={state} kakao_id={kakao_id} nickname={nickname}")
         return {"success": True}
     else:
         err = resp.json()
@@ -698,22 +799,25 @@ class ScheduleRequest(BaseModel):
 @app.post("/api/schedule")
 def schedule_message(data: ScheduleRequest):
     refresh_token = None
+    kakao_id = "anonymous"
 
     if data.send_method == "kakao":
         if not data.state or data.state not in oauth_states:
             return {"error": "카카오 인증이 필요합니다."}
         refresh_token = oauth_states[data.state]["refresh_token"]
+        kakao_id = oauth_states[data.state].get("kakao_id", "anonymous")
     elif data.send_method == "discord":
         if not data.discord_webhook:
             return {"error": "Discord 웹훅 URL을 입력해주세요."}
+        kakao_id = oauth_states.get(data.state or "", {}).get("kakao_id", "anonymous")
     elif data.send_method == "email":
         if not data.target_email:
             return {"error": "이메일 주소를 입력해주세요."}
+        kakao_id = oauth_states.get(data.state or "", {}).get("kakao_id", "anonymous")
     else:
         return {"error": "지원하지 않는 발송 채널입니다."}
 
     job_id   = str(uuid.uuid4())
-    # 프론트는 항상 UTC(Z)로 전송 → KST naive datetime으로 변환
     dt_utc   = datetime.fromisoformat(data.date_scheduled.replace("Z", "+00:00"))
     sched_dt = dt_utc.astimezone(KST).replace(tzinfo=None)
     is_immediate = (sched_dt - datetime.now()).total_seconds() < 60
@@ -721,11 +825,12 @@ def schedule_message(data: ScheduleRequest):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         """INSERT INTO schedules
-           (id, letter, emotions, keywords, date_created, date_scheduled,
+           (id, kakao_id, letter, emotions, keywords, date_created, date_scheduled,
             refresh_token, status, send_method, discord_webhook, target_email)
-           VALUES (?,?,?,?,?,?,?,'pending',?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,'pending',?,?,?)""",
         (
             job_id,
+            kakao_id,
             data.letter,
             json.dumps(data.emotions, ensure_ascii=False),
             json.dumps(data.keywords, ensure_ascii=False),

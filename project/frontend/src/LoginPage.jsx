@@ -20,14 +20,20 @@ export default function LoginPage({ onLogin }) {
       const { url } = await fetch(`${API}/api/kakao/auth-url?state=${stateKey}`).then(r => r.json())
       const popup = window.open(url, 'kakao-login', 'width=520,height=720,left=200,top=100')
 
+      const finishLogin = async () => {
+        const { nickname } = await fetch(`${API}/api/me?state=${stateKey}`).then(r => r.json()).catch(() => ({}))
+        localStorage.setItem('kakao_state', stateKey)
+        if (nickname) localStorage.setItem('kakao_nickname', nickname)
+        setStatus('done')
+        setTimeout(() => onLogin(stateKey, nickname || ''), 800)
+      }
+
       const onMsg = (e) => {
         if (e.data !== 'kakao-auth-complete') return
         clearInterval(pollRef.current)
         window.removeEventListener('message', onMsg)
         popup?.close()
-        setStatus('done')
-        localStorage.setItem('kakao_state', stateKey)
-        setTimeout(() => onLogin(stateKey), 800)
+        finishLogin()
       }
       window.addEventListener('message', onMsg)
 
@@ -37,9 +43,7 @@ export default function LoginPage({ onLogin }) {
         clearInterval(pollRef.current)
         window.removeEventListener('message', onMsg)
         popup?.close()
-        setStatus('done')
-        localStorage.setItem('kakao_state', stateKey)
-        setTimeout(() => onLogin(stateKey), 800)
+        finishLogin()
       }, 2000)
     } catch {
       setStatus('idle')
