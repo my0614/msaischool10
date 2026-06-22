@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { members } from "./info";
-import "./App.css";
+import { members } from "../info";
+import "../App.css";
 
 function getAvatar(name, bgColor) {
   return `https://api.dicebear.com/9.x/adventurer/svg?seed=${encodeURIComponent(name)}&backgroundColor=${bgColor}`;
