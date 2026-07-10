@@ -3,12 +3,14 @@ import TeamPage from "./pages/TeamPage";
 import CounterPage from "./pages/CounterPage";
 import TodoPage from "./pages/TodoPage";
 import BoardPage from "./pages/BoardPage";
+import PhilosopherPage from "./pages/PhilosopherPage";
 
 const PAGES = [
   { id: "team",    label: "팀 소개" },
   { id: "counter", label: "카운터" },
   { id: "todo",    label: "투두리스트" },
   { id: "board",   label: "게시판" },
+  { id: "philo",   label: "철학소년단" },
 ];
 
 export default function App() {
@@ -35,6 +37,7 @@ export default function App() {
         {page === "counter" && <CounterPage />}
         {page === "todo"    && <TodoPage />}
         {page === "board"   && <BoardPage />}
+        {page === "philo"   && <PhilosopherPage />}
       </div>
     </div>
   );
