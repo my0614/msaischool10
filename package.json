@@ -1,0 +1,7 @@
+{
+  "name": "msaischool10",
+  "private": true,
+  "scripts": {
+    "web": "npm run dev --prefix web/myreact"
+  }
+}
