@@ -28,4 +28,5 @@ from django.urls import path, include
 urlpatterns = [
 path("admin/", admin.site.urls),
 path(r"v1/common/", include("news.urls.v1.common")),
+path(r"v1/users/", include("news.urls.v1.user")),
 ]

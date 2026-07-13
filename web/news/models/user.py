@@ -1,14 +1,7 @@
-import uuid
-from django.utils import timezone
 from django.contrib.auth.base_user import BaseUserManager, AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 from news.models.common import BaseModel
-
-from django.http import JsonResponse
-from rest_framework.views import APIView
-from django.contrib.auth import authenticate, login, logout
-import datetime
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
@@ -46,16 +39,3 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return '{} ({})'.format(self.username, self.name)
-    
-class UserMySelfView(APIView):
-    
-    def get(self, request):
-        user = request.user
-        
-        if user.is_authenticated:
-        user.last_login = datetime.datetime.now()
-        user.save()
-        user_dict = dict(
-        username=user.username,
-        last_login=user.last_login.strftime("%d/%m/%Y, %H:%M:%S")
-    
