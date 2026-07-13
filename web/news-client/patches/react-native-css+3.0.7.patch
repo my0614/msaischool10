@@ -1,0 +1,46 @@
+diff --git a/node_modules/react-native-css/dist/commonjs/babel/import-plugin.js b/node_modules/react-native-css/dist/commonjs/babel/import-plugin.js
+index c5f49f3..fac700d 100644
+--- a/node_modules/react-native-css/dist/commonjs/babel/import-plugin.js
++++ b/node_modules/react-native-css/dist/commonjs/babel/import-plugin.js
+@@ -17,11 +17,14 @@ function _default({
+   function isFromThisModule(filename) {
+     return filename.startsWith(thisModuleDist) || filename.startsWith(thisModuleSrc);
+   }
++  function isFromReactNativeWeb(filename) {
++    return filename.includes(`${_path.sep}react-native-web${_path.sep}`);
++  }
+   return {
+     name: "Rewrite react-native to react-native-css",
+     visitor: {
+       ImportDeclaration(path, state) {
+-        if (processed.has(path) || processed.has(path.node) || isFromThisModule(state.filename)) {
++        if (processed.has(path) || processed.has(path.node) || isFromThisModule(state.filename) || isFromReactNativeWeb(state.filename)) {
+           return;
+         }
+         const statements = (0, _reactNative.handleReactNativeImport)(path.node, t, state.filename) ?? (0, _reactNativeWeb.handleReactNativeWebImport)(path.node, t, state.filename);
+@@ -34,7 +37,7 @@ function _default({
+         path.replaceWithMultiple(statements);
+       },
+       VariableDeclaration(path, state) {
+-        if (processed.has(path) || processed.has(path.node) || isFromThisModule(state.filename)) {
++        if (processed.has(path) || processed.has(path.node) || isFromThisModule(state.filename) || isFromReactNativeWeb(state.filename)) {
+           return;
+         }
+         const firstDeclaration = path.node.declarations.at(0);
+diff --git a/node_modules/react-native-css/dist/commonjs/metro/resolver.js b/node_modules/react-native-css/dist/commonjs/metro/resolver.js
+index 314ffa1..1d52dc4 100644
+--- a/node_modules/react-native-css/dist/commonjs/metro/resolver.js
++++ b/node_modules/react-native-css/dist/commonjs/metro/resolver.js
+@@ -42,7 +42,11 @@ function webResolver(resolver, context, moduleName, platform) {
+   // Skip anything that isn't importing from `react-native-web`
+   !resolution.filePath.includes(`${_nodePath.sep}react-native-web${_nodePath.sep}`) ||
+   // Skip internal react-native-web files
+-  resolution.filePath.includes(`${_nodePath.sep}react-native-web${_nodePath.sep}dist${_nodePath.sep}vendor`)) {
++  resolution.filePath.includes(`${_nodePath.sep}react-native-web${_nodePath.sep}dist${_nodePath.sep}vendor`) ||
++  // Skip requests made by react-native-web's own internal modules (e.g. its
++  // barrel index.js requiring its own ./exports/FlatList) to avoid a
++  // self-referential circular require back into react-native-web.
++  context.originModulePath.includes(`${_nodePath.sep}react-native-web${_nodePath.sep}`)) {
+     return resolution;
+   }
+ 
