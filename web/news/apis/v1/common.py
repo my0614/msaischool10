@@ -1,6 +1,7 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
 
 from news.models.common import Sample
@@ -20,9 +21,28 @@ class HelloWorldView(APIView):
 class SampleListView(APIView):
     def get(self, request):
         sample_queryset = Sample.objects.all()
-        serializer = SampleListSerializer(sample_queryset, many=True)
+
+        paginator = PageNumberPagination()
+        paginator.page_size = 10
+
+        result_page = paginator.paginate_queryset(sample_queryset, request)
+        serializer = SampleListSerializer(result_page, many=True)
+
+        page_information = {
+            "total_count": paginator.page.paginator.count,
+            "total_pages": paginator.page.paginator.num_pages,
+            "next": paginator.get_next_link(),
+            "previous": paginator.get_previous_link(),
+            "page_size": paginator.page.paginator.per_page,
+        }
+
         return Response(
-            dict(status="OK", message="SUCCESS", data=serializer.data)
+            dict(
+                status="OK",
+                message="SUCCESS",
+                data=serializer.data,
+                page_information=page_information,
+            )
         )
 
     def post(self, request):
