@@ -1,5 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import Constants from 'expo-constants';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Newspaper, Search, Star } from 'lucide-react-native';
@@ -14,6 +15,8 @@ import { Heading } from '@/components/ui/heading';
 import { HStack } from '@/components/ui/hstack';
 import { Icon } from '@/components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '@/components/ui/input';
+import { Text } from '@/components/ui/text';
+import { VStack } from '@/components/ui/vstack';
 import { authHeaders, clearAuthToken, getAuthToken } from '@/lib/auth';
 
 // Expo Go에서 실제 기기로 QR을 찍으면 'localhost'는 기기 자신을 가리키므로,
@@ -131,6 +134,10 @@ export default function NewsScreen() {
     [username, router]
   );
 
+  const onItemClicked = useCallback((link: string) => {
+    WebBrowser.openBrowserAsync(link);
+  }, []);
+
   const visibleItems = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return items
@@ -192,12 +199,26 @@ export default function NewsScreen() {
             keyExtractor={(item, index) => item.id ?? String(index)}
             contentContainerStyle={styles.list}
             renderItem={({ item }) => (
-              <Pressable onPress={() => WebBrowser.openBrowserAsync(item.link)}>
-                <ThemedView style={styles.item}>
-                  <HStack space="sm" style={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                    <ThemedText type="defaultSemiBold" style={{ flex: 1 }}>
+              <Pressable
+                onPress={() => onItemClicked(item.link)}
+                style={{
+                  padding: 16,
+                  borderBottomWidth: 1,
+                  borderColor: '#e5e7eb',
+                  backgroundColor: '#fff',
+                }}
+              >
+                <Image
+                  style={{ height: 240, width: '100%', borderRadius: 24 }}
+                  source={{ uri: `https://picsum.photos/seed/${item.id}/400/300` }}
+                  alt="image"
+                  contentFit="cover"
+                />
+                <VStack style={{ gap: 4 }}>
+                  <HStack style={{ gap: 8, alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <Text style={{ flex: 1, fontSize: 16, fontWeight: 'bold', color: '#222' }}>
                       {item.title}
-                    </ThemedText>
+                    </Text>
                     <Pressable hitSlop={8} onPress={() => toggleFavorite(item)}>
                       <Icon
                         as={Star}
@@ -206,10 +227,11 @@ export default function NewsScreen() {
                       />
                     </Pressable>
                   </HStack>
-                  <ThemedText>
-                    {item.source} · {item.pub_date}
-                  </ThemedText>
-                </ThemedView>
+                  <HStack style={{ gap: 8, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 12, color: '#6b7280' }}>{item.pub_date}</Text>
+                    <Text style={{ fontSize: 12, color: '#6b7280' }}>{item.source}</Text>
+                  </HStack>
+                </VStack>
               </Pressable>
             )}
           />
@@ -245,8 +267,5 @@ const styles = StyleSheet.create({
   list: {
     padding: 16,
     gap: 12,
-  },
-  item: {
-    gap: 4,
   },
 });
