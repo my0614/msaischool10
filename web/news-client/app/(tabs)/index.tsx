@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 import UserItem from '@/components/ui/user-item';
 import { Box } from '@/components/ui/box';
@@ -20,6 +21,7 @@ const PEOPLE = [
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [name, setName] = useState('정종현');
   const [isInitialized, setIsInitialized] = useState(false);
   const [data, setData] = useState({ address: '서울시 강남구' });
@@ -50,6 +52,11 @@ export default function HomeScreen() {
     console.log('3. 주소 변경 완료', data.address);
   }, [data]);
 
+  const onNextClicked = () => {
+    // console.log("4. 다음 화면으로 이동", name);
+    router.push('/home/home-detail');
+  };
+
   return (
     <Box style={{ flex: 1 }}>
       <HStack
@@ -67,7 +74,7 @@ export default function HomeScreen() {
         <Icon as={Home} size="sm" />
       </HStack>
 
-      <VStack style={{ marginVertical: 20, marginHorizontal: 20 }}>
+      <VStack space="sm" style={{ marginVertical: 20, marginHorizontal: 20 }}>
         <Text>{name}</Text>
         <Text>{data.address}</Text>
         <Button
@@ -77,6 +84,9 @@ export default function HomeScreen() {
           }}
         >
           <ButtonText>이름 변경</ButtonText>
+        </Button>
+        <Button onPress={onNextClicked}>
+          <ButtonText>다음 화면</ButtonText>
         </Button>
       </VStack>
 

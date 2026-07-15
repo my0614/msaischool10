@@ -1,34 +1,12 @@
-import os
-import sys
-import django
 import feedparser
 from datetime import datetime
 import pytz
-# 현재 스크립트 파일의 절대 경로 (예: /path/to/kc-news-back-service/news/crawlers/news.py)
-script_path = os.path.abspath(__file__)
-# 현재 스크립트가 위치한 디렉토리 (예: /path/to/kc-news-back-service/news/crawlers/)
-current_dir = os.path.dirname(script_path)
-# 앱 루트 디렉토리 (예: /path/to/kc-news-back-service/news/)
-# news/crawlers/ 에서 news/ 로 이동
-app_root = os.path.dirname(current_dir)
-# 프로젝트 루트 디렉토리 (예: /path/to/kc-news-back-service/)
-# news/ 에서 kc-news-back-service/ 로 이동
-project_root = os.path.dirname(app_root)
-# Python 모듈 검색 경로의 맨 앞에 프로젝트 루트 디렉토리를 추가합니다.
-sys.path.insert(0, project_root)
-
-
-# Django 설정 파일 경로 지정
-# 'project'는 settings.py를 포함하는 내부 폴더 이름입니다.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'project.settings')
-# Django 환경 초기화
-django.setup()
-# --- Django 환경 설정 끝 ---
-# Django 모델 임포트 (Django 환경 설정 후에 임포트해야 함)
-from news.models import NewsChannel, NewsItem
 
 
 def parse_and_save_rss_feed_with_feedparser(rss_url):
+    # Django 앱 레지스트리가 준비된 뒤에 임포트해야 하므로 함수 내부에서 임포트한다.
+    from news.models import NewsChannel, NewsItem
+
     feed = feedparser.parse(rss_url)
     if feed.bozo:
         print(f"경고: 피드 파싱이 불완전할 수 있습니다: {feed.bozo_exception}")
@@ -124,6 +102,19 @@ def parse_and_save_rss_feed_with_feedparser(rss_url):
 
 
 if __name__ == "__main__":
+    import os
+    import sys
+    import django
+
+    script_path = os.path.abspath(__file__)
+    current_dir = os.path.dirname(script_path)
+    app_root = os.path.dirname(current_dir)
+    project_root = os.path.dirname(app_root)
+    sys.path.insert(0, project_root)
+
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'project.settings')
+    django.setup()
+
     google_news_rss_url = "https://news.google.com/rss/?hl=ko&gl=KR&ceid=KR:ko"
     parse_and_save_rss_feed_with_feedparser(google_news_rss_url)
     print("\n파싱 및 저장 완료!")
