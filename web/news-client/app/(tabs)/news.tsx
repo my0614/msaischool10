@@ -1,5 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Newspaper, Search, Star } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -22,29 +22,34 @@ function resolveApiHost() {
   return host || 'localhost';
 }
 
-const NEWS_API_URL = `http://${resolveApiHost()}:8000/v1/news/`;
-const FAVORITES_STORAGE_KEY = 'news:favorites';
+const API_HOST = resolveApiHost();
+const NEWS_API_URL = `http://${API_HOST}:8000/v1/news/`;
+const FAVORITES_API_URL = `http://${API_HOST}:8000/v1/news/favorites/`;
+const ME_API_URL = `http://${API_HOST}:8000/v1/users/me/`;
 
 type NewsItem = {
+  id: string;
   title: string;
   pub_date: string;
   source: string;
   link: string;
+  is_favorite: boolean;
 };
 
 export default function NewsScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
 
   const loadNews = useCallback(async () => {
     try {
       setError(null);
-      const response = await fetch(NEWS_API_URL);
+      const response = await fetch(NEWS_API_URL, { credentials: 'include' });
       const json = await response.json();
       setItems(json.data ?? []);
     } catch (e) {
@@ -54,42 +59,68 @@ export default function NewsScreen() {
     }
   }, []);
 
+  const loadMe = useCallback(async () => {
+    try {
+      const response = await fetch(ME_API_URL, { credentials: 'include' });
+      const json = await response.json();
+      setUsername(json.status === 'OK' ? json.user.username : null);
+    } catch (e) {
+      setUsername(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadNews();
-  }, [loadNews]);
+    loadMe();
+  }, [loadNews, loadMe]);
 
-  useEffect(() => {
-    AsyncStorage.getItem(FAVORITES_STORAGE_KEY).then((stored) => {
-      if (stored) {
-        setFavorites(new Set(JSON.parse(stored)));
+  const toggleFavorite = useCallback(
+    async (item: NewsItem) => {
+      if (!username) {
+        router.push('/login');
+        return;
       }
-    });
-  }, []);
 
-  const toggleFavorite = useCallback((link: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(link)) {
-        next.delete(link);
-      } else {
-        next.add(link);
+      const nextIsFavorite = !item.is_favorite;
+      setItems((prev) =>
+        prev.map((it) => (it.id === item.id ? { ...it, is_favorite: nextIsFavorite } : it))
+      );
+
+      try {
+        if (nextIsFavorite) {
+          await fetch(FAVORITES_API_URL, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ news_item_id: item.id }),
+          });
+        } else {
+          await fetch(`${FAVORITES_API_URL}${item.id}/`, {
+            method: 'DELETE',
+            credentials: 'include',
+          });
+        }
+      } catch (e) {
+        // 실패하면 낙관적으로 바꿨던 상태를 되돌린다.
+        setItems((prev) =>
+          prev.map((it) => (it.id === item.id ? { ...it, is_favorite: item.is_favorite } : it))
+        );
       }
-      AsyncStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify([...next]));
-      return next;
-    });
-  }, []);
+    },
+    [username, router]
+  );
 
   const visibleItems = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return items
-      .filter((item) => !showFavoritesOnly || favorites.has(item.link))
+      .filter((item) => !showFavoritesOnly || item.is_favorite)
       .filter(
         (item) =>
           !keyword ||
           item.title.toLowerCase().includes(keyword) ||
           item.source?.toLowerCase().includes(keyword)
       );
-  }, [items, query, showFavoritesOnly, favorites]);
+  }, [items, query, showFavoritesOnly]);
 
   return (
     <ThemedView style={styles.container}>
@@ -97,8 +128,13 @@ export default function NewsScreen() {
         space="xs"
         style={[styles.header, { height: 56 + insets.top, paddingTop: insets.top }]}
       >
-        <Heading size="md">News</Heading>
+        <Heading size="md" style={{ flex: 1, textAlign: 'center' }}>
+          News
+        </Heading>
         <Icon as={Newspaper} size="sm" />
+        <Pressable onPress={() => router.push('/login')} style={{ position: 'absolute', right: 16, bottom: 12 }}>
+          <ThemedText type="link">{username ?? '로그인'}</ThemedText>
+        </Pressable>
       </HStack>
 
       {loading ? (
@@ -132,7 +168,7 @@ export default function NewsScreen() {
 
           <FlatList
             data={visibleItems}
-            keyExtractor={(item, index) => item.link ?? String(index)}
+            keyExtractor={(item, index) => item.id ?? String(index)}
             contentContainerStyle={styles.list}
             renderItem={({ item }) => (
               <Pressable onPress={() => WebBrowser.openBrowserAsync(item.link)}>
@@ -141,10 +177,10 @@ export default function NewsScreen() {
                     <ThemedText type="defaultSemiBold" style={{ flex: 1 }}>
                       {item.title}
                     </ThemedText>
-                    <Pressable hitSlop={8} onPress={() => toggleFavorite(item.link)}>
+                    <Pressable hitSlop={8} onPress={() => toggleFavorite(item)}>
                       <Icon
                         as={Star}
-                        fill={favorites.has(item.link) ? '#f5c518' : 'none'}
+                        fill={item.is_favorite ? '#f5c518' : 'none'}
                         color="#f5c518"
                       />
                     </Pressable>

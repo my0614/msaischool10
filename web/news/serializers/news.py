@@ -10,10 +10,15 @@ class NewsChannelSerializer(serializers.ModelSerializer):
 
 class NewsItemSerializer(serializers.ModelSerializer):
     pub_date = serializers.SerializerMethodField()
+    is_favorite = serializers.SerializerMethodField()
 
     class Meta:
         model = NewsItem
-        fields = ['title', 'pub_date', 'source', 'link']
+        fields = ['id', 'title', 'pub_date', 'source', 'link', 'is_favorite']
 
     def get_pub_date(self, obj):
         return obj.pub_date.strftime('%Y년 %m월 %d일')
+
+    def get_is_favorite(self, obj):
+        favorite_news_item_ids = self.context.get('favorite_news_item_ids', set())
+        return obj.id in favorite_news_item_ids

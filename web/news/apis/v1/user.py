@@ -3,6 +3,40 @@ from rest_framework.views import APIView
 from django.contrib.auth import authenticate, login, logout
 import datetime
 
+from news.models import User
+
+
+class UserSignUpView(APIView):
+    authentication_classes = ()
+    permission_classes = ()
+
+    def post(self, request):
+        username = request.data.get('username', '')
+        password = request.data.get('password', '')
+        name = request.data.get('name', '')
+
+        if not username or not password:
+            return JsonResponse(dict(
+                status='WRONG_USERNAME_OR_PASSWORD',
+                message='이메일 또는 패스워드를 확인하세요.'
+            ), status=400)
+
+        if User.objects.filter(username=username).exists():
+            return JsonResponse(dict(
+                status='USER_ALREADY_EXISTS',
+                message='이미 가입된 이메일입니다.'
+            ), status=400)
+
+        user = User.objects.create_user(username=username, password=password, name=name)
+        login(request, user)
+
+        return JsonResponse(dict(
+            status='OK',
+            message='회원가입에 성공하였습니다.',
+            username=user.username
+        ))
+
+
 class UserSignInView(APIView):
     authentication_classes = ()
     permission_classes = ()
