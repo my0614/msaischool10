@@ -1,8 +1,9 @@
+import { useFocusEffect } from '@react-navigation/native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Newspaper, Search, Star } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,6 +14,7 @@ import { Heading } from '@/components/ui/heading';
 import { HStack } from '@/components/ui/hstack';
 import { Icon } from '@/components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '@/components/ui/input';
+import { authHeaders, clearAuthToken, getAuthToken } from '@/lib/auth';
 
 // Expo Go에서 실제 기기로 QR을 찍으면 'localhost'는 기기 자신을 가리키므로,
 // 개발 서버(Metro)가 떠 있는 호스트(PC의 LAN IP)를 그대로 재사용한다.
@@ -26,6 +28,7 @@ const API_HOST = resolveApiHost();
 const NEWS_API_URL = `http://${API_HOST}:8000/v1/news/`;
 const FAVORITES_API_URL = `http://${API_HOST}:8000/v1/news/favorites/`;
 const ME_API_URL = `http://${API_HOST}:8000/v1/users/me/`;
+const SIGNOUT_API_URL = `http://${API_HOST}:8000/v1/users/signout/`;
 
 type NewsItem = {
   id: string;
@@ -49,7 +52,7 @@ export default function NewsScreen() {
   const loadNews = useCallback(async () => {
     try {
       setError(null);
-      const response = await fetch(NEWS_API_URL, { credentials: 'include' });
+      const response = await fetch(NEWS_API_URL, { headers: await authHeaders() });
       const json = await response.json();
       setItems(json.data ?? []);
     } catch (e) {
@@ -60,8 +63,13 @@ export default function NewsScreen() {
   }, []);
 
   const loadMe = useCallback(async () => {
+    const token = await getAuthToken();
+    if (!token) {
+      setUsername(null);
+      return;
+    }
     try {
-      const response = await fetch(ME_API_URL, { credentials: 'include' });
+      const response = await fetch(ME_API_URL, { headers: await authHeaders() });
       const json = await response.json();
       setUsername(json.status === 'OK' ? json.user.username : null);
     } catch (e) {
@@ -69,10 +77,23 @@ export default function NewsScreen() {
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(
+    useCallback(() => {
+      loadNews();
+      loadMe();
+    }, [loadNews, loadMe])
+  );
+
+  const handleAccountPress = useCallback(async () => {
+    if (!username) {
+      router.push('/login');
+      return;
+    }
+    await fetch(SIGNOUT_API_URL, { headers: await authHeaders() });
+    await clearAuthToken();
+    setUsername(null);
     loadNews();
-    loadMe();
-  }, [loadNews, loadMe]);
+  }, [username, router, loadNews]);
 
   const toggleFavorite = useCallback(
     async (item: NewsItem) => {
@@ -87,17 +108,17 @@ export default function NewsScreen() {
       );
 
       try {
+        const headers = await authHeaders();
         if (nextIsFavorite) {
           await fetch(FAVORITES_API_URL, {
             method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({ news_item_id: item.id }),
           });
         } else {
           await fetch(`${FAVORITES_API_URL}${item.id}/`, {
             method: 'DELETE',
-            credentials: 'include',
+            headers,
           });
         }
       } catch (e) {
@@ -132,7 +153,7 @@ export default function NewsScreen() {
           News
         </Heading>
         <Icon as={Newspaper} size="sm" />
-        <Pressable onPress={() => router.push('/login')} style={{ position: 'absolute', right: 16, bottom: 12 }}>
+        <Pressable onPress={handleAccountPress} style={{ position: 'absolute', right: 16, bottom: 12 }}>
           <ThemedText type="link">{username ?? '로그인'}</ThemedText>
         </Pressable>
       </HStack>

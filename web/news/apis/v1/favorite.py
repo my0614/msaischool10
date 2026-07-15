@@ -1,4 +1,3 @@
-from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -7,13 +6,7 @@ from news.models import Favorite, NewsItem
 from news.serializers.favorite import FavoriteSerializer
 
 
-class CsrfExemptSessionAuthentication(SessionAuthentication):
-    def enforce_csrf(self, request):
-        return  # 앱(RN 클라이언트)은 CSRF 토큰을 다루지 않으므로 세션 인증에서 검사를 건너뛴다.
-
-
 class FavoriteListView(APIView):
-    authentication_classes = [CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -36,7 +29,6 @@ class FavoriteListView(APIView):
 
 
 class FavoriteDetailView(APIView):
-    authentication_classes = [CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, news_item_id):

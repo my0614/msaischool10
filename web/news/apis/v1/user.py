@@ -1,5 +1,7 @@
 from django.http import JsonResponse
 from rest_framework.views import APIView
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate, login, logout
 import datetime
 
@@ -29,11 +31,13 @@ class UserSignUpView(APIView):
 
         user = User.objects.create_user(username=username, password=password, name=name)
         login(request, user)
+        token, _ = Token.objects.get_or_create(user=user)
 
         return JsonResponse(dict(
             status='OK',
             message='회원가입에 성공하였습니다.',
-            username=user.username
+            username=user.username,
+            token=token.key
         ))
 
 
@@ -63,14 +67,15 @@ class UserSignInView(APIView):
             ), status=401)
 
         login(request, user)
+        token, _ = Token.objects.get_or_create(user=user)
 
         return JsonResponse(dict(
             status='OK',
             message='로그인에 성공하였습니다.',
             username=username,
-            password=password
+            token=token.key
         ))
-        
+
 class UserMySelfView(APIView):
     def get(self, request):
         user = request.user
@@ -96,7 +101,10 @@ class UserMySelfView(APIView):
 
 
 class UserSignOutView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
+        request.user.auth_token.delete()
         logout(request)
         return JsonResponse(dict(
             status='OK',

@@ -9,6 +9,7 @@ import { Heading } from '@/components/ui/heading';
 import { Input, InputField } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { VStack } from '@/components/ui/vstack';
+import { setAuthToken } from '@/lib/auth';
 
 function resolveApiHost() {
   const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
@@ -32,7 +33,6 @@ export default function LoginScreen() {
     try {
       const response = await fetch(`${USER_API_BASE}/${mode}/`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
@@ -41,6 +41,7 @@ export default function LoginScreen() {
         setError(json.message ?? '요청에 실패했습니다.');
         return;
       }
+      await setAuthToken(json.token);
       router.back();
     } catch (e) {
       setError('서버에 연결할 수 없습니다.');

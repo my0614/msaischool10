@@ -36,6 +36,7 @@ CORS_ALLOW_CREDENTIALS = True
 INSTALLED_APPS = [
     'news',
     'rest_framework',
+    'rest_framework.authtoken',
     'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -44,6 +45,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 ]
+
+# 모바일 클라이언트(RN)는 세션 쿠키를 안정적으로 유지하지 못하므로 토큰 인증을 기본으로 쓴다.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
